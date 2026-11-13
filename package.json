@@ -1,0 +1,13 @@
+{
+  "name": "openstream-blueprint",
+  "private": true,
+  "version": "0.1.0",
+  "packageManager": "pnpm@10.28.0",
+  "scripts": {
+    "dev:api": "pnpm --filter @openstream/api start:dev",
+    "dev:web": "pnpm --filter @openstream/web dev",
+    "build": "pnpm -r build",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down"
+  }
+}

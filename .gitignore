@@ -1,0 +1,12 @@
+node_modules
+dist
+.next
+.env
+.env.local
+data/media/*
+data/shows/*
+!data/media/.gitkeep
+!data/shows/.gitkeep
+backups/*
+!backups/.gitkeep
+*.tsbuildinfo
