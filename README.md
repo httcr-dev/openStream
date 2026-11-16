@@ -1,88 +1,71 @@
 # OpenStream
 
-Agregador pessoal: pesquisa filmes/séries (TMDB), descobre fontes **autorizadas** e reproduz dentro do app.
-
-> O TMDB fornece só metadados. Vídeo vem de providers independentes. O OpenStream não contorna DRM,
-> paywall, autenticação nem anúncios de terceiros.
+Agregador pessoal de catálogo e reprodução. O TMDB identifica filmes e séries; providers e addons independentes procuram streams para o conteúdo específico solicitado.
 
 ## Stack
 
 | Camada | Tecnologia |
 |---|---|
 | Monorepo | pnpm workspaces |
-| API | NestJS 12 (ESM) + TypeScript 6 — porta **3000**, prefixo `/api/v1` |
-| Web | Next.js 16 + React 19 — porta **3001** |
-| Mídia | Jellyfin — porta **8096** |
-| Banco | PostgreSQL — porta **5432** (provisionado, ainda não usado pela API) |
+| API | NestJS 12 + TypeScript — porta 3000, prefixo `/api/v1` |
+| Web | Next.js 16 + React 19 — porta 3001 |
+| Catálogo | TMDB |
+| Addons | Protocolo Stremio (manifest, stream) |
+| Infra local | PostgreSQL opcional (a API ainda não o utiliza) |
 
-## Subir
+## Executar localmente
 
 ```bash
-cp .env.example .env        # preencha TMDB_READ_TOKEN no mínimo
+cp .env.example .env
+# Preencha TMDB_READ_TOKEN
 pnpm install
-pnpm infra:up               # Postgres + Jellyfin
-pnpm dev:api                # http://localhost:3000/api/v1/health
-pnpm dev:web                # http://localhost:3001
+pnpm dev:api
+pnpm dev:web
 ```
 
-1. Abra `http://localhost:8096`, conclua o assistente, crie um usuário e as bibliotecas
-   `/media` (filmes) e `/shows` (séries). Ponha esse usuário em `JELLYFIN_USERNAME/PASSWORD`.
-2. Para acessar do celular, ponha o IP da LAN em `PUBLIC_API_URL`, `WEB_ORIGIN` e `NEXT_PUBLIC_API_URL`.
+PostgreSQL é opcional e pode ser iniciado com `pnpm infra:up`. O backend funciona sem servidor de mídia local.
+
+## Addons Stremio
+
+Configure uma lista de URLs de manifests em `STREMIO_ADDON_URLS`, separadas por vírgula. O OpenStream carrega os manifests ao iniciar, identifica addons com recurso `stream` e consulta automaticamente os que declaram compatibilidade com o tipo e identificador do conteúdo.
+
+Para séries, a consulta usa o IMDb ID e o identificador de episódio no formato `tt...:temporada:episódio`. Isso faz com que o addon receba o episódio específico, em vez de uma busca textual genérica pelo nome da série.
+
+Nesta primeira versão são aceitos streams HTTP(S) diretos e IDs de vídeo do YouTube para embed oficial. Torrents, debrid, `externalUrl` e streams que exigem cabeçalhos especiais ainda não são suportados pelo player web. A lista de manifests é configurada uma única vez no servidor, não por usuário. A descoberta automática seleciona todos os addons compatíveis dessa lista. O ranking adaptativo considera taxa de resposta e latência observadas; ainda não há integração com um diretório global para importar popularidade.
+
+## Providers
+
+- **Stremio Addons**: adaptador de manifests e recurso `stream`.
+- **Internet Archive**: busca de filmes com correspondência exata de título; não retorna resultados para séries enquanto não houver resolução confiável de episódios.
+
+YouTube Search e PeerTube Search foram retirados do registro automático porque uma busca textual não comprova que o resultado seja o filme ou episódio solicitado. Poderão voltar como integrações específicas quando tiverem identificação precisa.
 
 ## Endpoints
 
 | Método | Rota | Descrição |
 |---|---|---|
-| GET | `/health` | status |
-| GET | `/catalog/search?q=` | `/search/multi` do TMDB (filmes e séries) |
-| GET | `/catalog/movie/:tmdbId` · `/catalog/series/:tmdbId` | detalhes (série traz temporadas) |
-| GET | `/catalog/series/:tmdbId/seasons/:n` | episódios |
-| GET | `/playback/sources?id=tmdb:movie:123[&season=&episode=]` | fontes de todos os providers ativos |
-| GET | `/providers` | providers e se estão ativos |
-| GET | `/stream/jellyfin/*` | proxy de mídia (Range + HLS); o token do Jellyfin nunca vai ao navegador |
+| GET | `/api/v1/health` | Saúde da API |
+| GET | `/api/v1/catalog/search?q=` | Busca de filmes e séries no TMDB |
+| GET | `/api/v1/catalog/movie/:id` | Detalhes do filme |
+| GET | `/api/v1/catalog/series/:id` | Detalhes da série e temporadas |
+| GET | `/api/v1/catalog/series/:id/seasons/:season` | Episódios da temporada |
+| GET | `/api/v1/playback/sources?id=tmdb:series:123&season=1&episode=2` | Fontes para episódio específico |
+| GET | `/api/v1/providers` | Providers ativos |
+| GET | `/api/v1/addons` | Addons carregados e estado dos manifests |
 
-IDs internos: `tmdb:movie:{id}` e `tmdb:series:{id}`.
+## Testes
 
-## Contrato de reprodução
-
-```ts
-type PlaybackTarget =
-  | { kind: 'native'; transport: 'http' | 'hls'; url: string }   // <video> / hls.js
-  | { kind: 'embed';  provider: string; embedUrl: string };      // player oficial em iframe
+```bash
+pnpm --filter @openstream/api test
 ```
 
-## Providers
+O comando compila a API e executa os testes unitários com o test runner nativo do Node.js.
 
-| Provider | Player | Requer | Observações |
-|---|---|---|---|
-| Jellyfin | native (Direct Play + HLS) | usuário/senha | só o que está na sua biblioteca; casa por TMDB ID, com fallback por título (localizado ou original) + ano |
-| YouTube | embed | `YOUTUBE_API_KEY` | só vídeos incorporáveis; `search.list` gasta 100 da cota diária de 10.000 (cache de 6h); **os anúncios do YouTube continuam** |
-| PeerTube | embed | nada (SepiaSearch) | busca por título; confira o resultado antes de assistir |
-| Internet Archive | embed | nada | acervo majoritariamente de domínio público |
+## Estado e limitações desta versão
 
-**Os resultados de YouTube/PeerTube/Internet Archive vêm de busca por título e podem ser outro conteúdo.**
-A UI mostra o título real de cada fonte para você conferir.
-
-### Adicionar um provider
-
-1. Crie `apps/api/src/providers/<nome>/<nome>.provider.ts` implementando `PlaybackProvider`
-   (`id`, `name`, `playerKind`, `isEnabled()`, `findSources(ref)`).
-2. Registre em `providers.module.ts` (lista de `providers` + `onModuleInit`).
-
-O front não muda: ele renderiza qualquer `PlaybackTarget`.
-
-## Estado atual
-
-Verificado (com mocks de TMDB e Jellyfin): build da API e do web, busca, detalhe, séries/episódios,
-casamento título localizado × original, Direct Play, HTTP Range (206), reescrita do HLS, proteção do
-token e allowlist do proxy.
-
-**Não verificado:** integração real com TMDB, Jellyfin real (transcodificação HLS de verdade),
-YouTube, PeerTube e Internet Archive (a rede do ambiente de desenvolvimento bloqueou esses hosts),
-e reprodução em navegador (o player foi só compilado).
-
-## Fora de escopo por enquanto
-
-Persistência no Postgres (histórico/favoritos), autenticação de usuários do OpenStream,
-legendas/seleção de áudio, sessões de progresso no Jellyfin, negociação de PlaybackInfo (hoje oferece
-Direct Play e HLS como duas fontes separadas).
+- O backend não depende de servidor de mídia local.
+- O resolver exige temporada e episódio ao pesquisar uma série.
+- A continuidade prioriza o mesmo addon/provider ao consultar o próximo episódio.
+- A página de reprodução oferece navegação para episódio anterior e próximo, inclusive entre temporadas.
+- A seleção de addons é automática entre os manifests configurados; a descoberta global/popularidade do diretório será uma etapa posterior.
+- A verificação de direitos/autorização foi deliberadamente adiada para uma fase posterior, conforme a prioridade atual de validar o funcionamento local.

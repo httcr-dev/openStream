@@ -4,7 +4,7 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: 'OpenStream',
-  description: 'Catálogo unificado e reprodução a partir de fontes autorizadas.',
+  description: 'Catálogo unificado, descoberta de addons e reprodução de mídia.',
 };
 
 export const viewport: Viewport = { width: 'device-width', initialScale: 1 };
@@ -15,9 +15,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="pt-BR" suppressHydrationWarning>
       <body>
         <header className="topbar">
-          <Link href="/" className="logo">
-            Open<span>Stream</span>
-          </Link>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <Link href="/" className="logo">
+              Open<span>Stream</span>
+            </Link>
+            <Link href="/addons" className="muted">Addons</Link>
+          </div>
         </header>
         <main className="container">{children}</main>
       </body>

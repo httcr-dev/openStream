@@ -8,6 +8,8 @@
     "dev:web": "pnpm --filter @openstream/web dev",
     "build": "pnpm -r build",
     "infra:up": "docker compose up -d",
-    "infra:down": "docker compose down"
+    "infra:down": "docker compose down",
+    "test": "pnpm --filter @openstream/api test",
+    "test:api": "pnpm --filter @openstream/api test"
   }
 }

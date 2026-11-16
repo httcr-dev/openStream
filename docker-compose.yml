@@ -12,19 +12,6 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
-  jellyfin:
-    image: jellyfin/jellyfin:latest
-    container_name: openstream-jellyfin
-    restart: unless-stopped
-    ports:
-      - "8096:8096"
-    volumes:
-      - jellyfin_config_clean:/config
-      - jellyfin_cache_clean:/cache
-      - ./data/media:/media:ro
-      - ./data/shows:/shows:ro
 
 volumes:
   postgres_data:
-  jellyfin_config_clean:
-  jellyfin_cache_clean:

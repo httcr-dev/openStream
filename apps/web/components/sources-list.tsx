@@ -47,7 +47,7 @@ export function SourcesList({
       {result && (
         <div style={{ marginTop: 12 }}>
           {result.sources.length === 0 && (
-            <p className="muted">Nenhuma fonte autorizada encontrada para este conteúdo.</p>
+            <p className="muted">Nenhuma fonte reproduzível encontrada para este conteúdo.</p>
           )}
           {result.sources.map((s) => (
             <div className="row" key={s.id}>
@@ -59,7 +59,7 @@ export function SourcesList({
                   {s.quality && <span className="badge">{s.quality}</span>}
                 </div>
               </div>
-              <Link className="btn" href={`/watch?${qs(s.id)}`}>
+              <Link className="btn" href={`/watch?${qs(s.id)}${s.providerId ? `&provider=${encodeURIComponent(s.providerId)}` : ''}`}>
                 Assistir
               </Link>
             </div>

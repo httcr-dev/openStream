@@ -33,13 +33,14 @@ export type PlaybackTarget =
 export interface PlaybackSource {
   id: string;
   provider: string;
+  providerId?: string;
   label: string;
   quality?: string;
   target: PlaybackTarget;
 }
 
 export interface ResolveResult {
-  media: { id: string; title: string };
+  media: { id: string; title: string; kind?: MediaKind; season?: number; episode?: number };
   sources: PlaybackSource[];
   errors: { provider: string; message: string }[];
 }
@@ -69,11 +70,13 @@ export const api = {
   detail: (kind: MediaKind, tmdbId: string) => get<CatalogDetail>(`/catalog/${kind}/${tmdbId}`),
   episodes: (tmdbId: string, season: number) =>
     get<Episode[]>(`/catalog/series/${tmdbId}/seasons/${season}`),
-  sources: (id: string, season?: number, episode?: number) => {
+  sources: (id: string, season?: number, episode?: number, provider?: string) => {
     const qs = new URLSearchParams({ id });
-    if (season) qs.set('season', String(season));
-    if (episode) qs.set('episode', String(episode));
+    if (season !== undefined) qs.set('season', String(season));
+    if (episode !== undefined) qs.set('episode', String(episode));
+    if (provider) qs.set('provider', provider);
     return get<ResolveResult>(`/playback/sources?${qs}`);
   },
+  addons: () => get<{ id: string; name: string; description?: string; status: 'ready' | 'error'; error?: string; resources: unknown[]; health?: { requests: number; successRate: number | null; averageLatencyMs: number | null; score: number } }[]>('/addons'),
   providers: () => get<ProviderDescriptor[]>('/providers'),
 };
