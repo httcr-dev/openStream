@@ -28,7 +28,8 @@ export interface Episode {
 
 export type PlaybackTarget =
   | { kind: 'native'; transport: 'http' | 'hls'; url: string }
-  | { kind: 'embed'; provider: string; embedUrl: string };
+  | { kind: 'embed'; provider: string; embedUrl: string }
+  | { kind: 'torrent'; infoHash: string; fileIdx?: number; externalUrl?: string };
 
 export interface PlaybackSource {
   id: string;
