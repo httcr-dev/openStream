@@ -1,13 +1,14 @@
 import {
   BadRequestException,
   GatewayTimeoutException,
+  HttpException,
+  HttpStatus,
   Injectable,
   Logger,
   NotFoundException,
   OnModuleDestroy,
   OnModuleInit,
   ServiceUnavailableException,
-  TooManyRequestsException,
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -224,7 +225,7 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
     let session = this.sessions.get(infoHash);
     if (!session) {
       if (this.sessions.size >= MAX_ACTIVE_TORRENTS) {
-        throw new TooManyRequestsException('Limite de torrents ativos atingido. Tente novamente em alguns minutos.');
+        throw new HttpException('Limite de torrents ativos atingido. Tente novamente em alguns minutos.', HttpStatus.TOO_MANY_REQUESTS);
       }
       session = {
         torrent: this.addTorrent(infoHash, trackers),
