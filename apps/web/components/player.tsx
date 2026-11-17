@@ -1,32 +1,20 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PlaybackSource } from '@/lib/api';
+import { torrentStreamUrl, type PlaybackSource } from '@/lib/api';
 
 /**
  * Player único para os destinos reproduzíveis:
  * - native/http: <video> com Direct Play
  * - native/hls:  <video> com hls.js (ou HLS nativo no Safari/iOS)
  * - embed:       iframe com o player oficial do provedor
- * - torrent:     candidato descoberto; requer engine P2P para reproduzir
+ * - torrent:     WebTorrent no backend, exposto como HTTP com suporte a Range
  */
 export function Player({ source }: { source: PlaybackSource }) {
   const { target } = source;
 
   if (target.kind === 'torrent') {
-    return (
-      <div className="player" style={{ display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center' }}>
-        <div>
-          <strong>Fonte torrent encontrada</strong>
-          <p className="muted">O addon encontrou este arquivo, mas o OpenStream ainda não tem um mecanismo P2P para reproduzi-lo.</p>
-          <p className="muted">Info hash: <code>{target.infoHash}</code></p>
-          {target.fileIdx !== undefined && <p className="muted">Arquivo no torrent: {target.fileIdx}</p>}
-          {target.externalUrl && (
-            <p><a href={target.externalUrl} target="_blank" rel="noreferrer">Abrir página da fonte</a></p>
-          )}
-        </div>
-      </div>
-    );
+    return <NativePlayer key={source.id} transport="http" url={torrentStreamUrl(target)} />;
   }
 
   if (target.kind === 'embed') {
@@ -91,7 +79,17 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
   return (
     <>
       <div className="player">
-        <video ref={ref} controls playsInline preload="metadata" onError={() => transport === 'http' && setError('Não foi possível reproduzir este arquivo (formato não suportado pelo navegador?). Tente a fonte HLS.')} />
+        <video
+          ref={ref}
+          controls
+          playsInline
+          preload="metadata"
+          onError={() => setError(
+            transport === 'http'
+              ? 'Não foi possível reproduzir este arquivo. Verifique se há peers disponíveis e se o navegador suporta o codec.'
+              : 'Não foi possível reproduzir este arquivo (formato não suportado pelo navegador?). Tente outra fonte.',
+          )}
+        />
       </div>
       {error && <p className="err">{error}</p>}
     </>
