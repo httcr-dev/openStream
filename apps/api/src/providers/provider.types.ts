@@ -16,7 +16,7 @@ export interface MediaRef {
 export type PlaybackTarget =
   | { kind: 'native'; transport: 'http' | 'hls'; url: string }
   | { kind: 'embed'; provider: string; embedUrl: string }
-  | { kind: 'torrent'; infoHash: string; fileIdx?: number; externalUrl?: string };
+  | { kind: 'torrent'; infoHash: string; fileIdx?: number; trackers?: string[]; externalUrl?: string };
 
 export interface PlaybackSource {
   id: string;
