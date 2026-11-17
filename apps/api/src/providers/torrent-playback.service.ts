@@ -194,14 +194,26 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
     res.once('close', release);
     res.once('finish', release);
 
-    const fileStream = file.createReadStream(range ? { start, end } : undefined);
-    fileStream.once('error', (error) => {
+    const failStream = (error: Error) => {
       this.logger.warn(`Torrent stream failed for ${infoHash}: ${error.message}`);
       release();
-      if (res.headersSent) res.destroy(error);
-      else res.status(500).end('Falha ao ler o arquivo do torrent.');
-    });
-    fileStream.pipe(res);
+      if (res.headersSent) {
+        res.destroy(error);
+        return;
+      }
+      res.removeHeader('Content-Length');
+      res.removeHeader('Content-Range');
+      res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+      res.status(500).end('Falha ao ler o arquivo do torrent.');
+    };
+
+    try {
+      const fileStream = file.createReadStream(range ? { start, end } : undefined);
+      fileStream.once('error', failStream);
+      fileStream.pipe(res);
+    } catch (error) {
+      failStream(error instanceof Error ? error : new Error(String(error)));
+    }
   }
 
   private async getFile(infoHash: string, fileIdx: number, trackers: string[]): Promise<{ session: TorrentSession; file: TorrentFile }> {
