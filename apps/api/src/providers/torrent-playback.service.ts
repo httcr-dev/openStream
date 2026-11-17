@@ -258,6 +258,7 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
         announce: trackers,
         path: this.config.get<string>('OPENSTREAM_TORRENT_PATH') ?? join(tmpdir(), 'openstream-torrents'),
         strategy: 'sequential',
+        addUID: true,
       }, (readyTorrent) => {
         if (settled) return;
         settled = true;
