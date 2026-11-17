@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { MediaRef, PlaybackProvider, PlaybackSource } from '../provider.types.js';
 import { ProviderSearchError } from '../provider.types.js';
-import { AddonRegistryService, hasAddonResource } from './addon-registry.service.js';
+import { AddonRegistryService } from './addon-registry.service.js';
 import type { RegisteredAddon, StremioStream } from './addon.types.js';
+
+const FORBIDDEN_COOLDOWN_MS = 15 * 60_000;
 
 function supportsType(addon: RegisteredAddon, type: 'movie' | 'series'): boolean {
   const declaredTypes = addon.manifest.types;
@@ -26,6 +28,19 @@ function isValidInfoHash(value: string): boolean {
   return /^(?:[a-f\d]{40}|[a-z2-7]{32})$/i.test(value);
 }
 
+function extractTrackers(sources: string[] = []): string[] {
+  return [...new Set(sources
+    .filter((source) => source.startsWith('tracker:'))
+    .map((source) => source.slice('tracker:'.length))
+    .filter((tracker) => {
+      try {
+        return ['udp:', 'http:', 'https:', 'ws:', 'wss:'].includes(new URL(tracker).protocol);
+      } catch {
+        return false;
+      }
+    }))].slice(0, 20);
+}
+
 export function stremioContentId(ref: MediaRef): string | null {
   if (!ref.imdbId) return null;
   if (ref.kind === 'movie') return ref.imdbId;
@@ -47,6 +62,7 @@ export class StremioAddonProvider implements PlaybackProvider {
   readonly playerKind = 'native' as const;
   readonly note = 'Addons compatíveis com o protocolo Stremio, consultados automaticamente.';
   private readonly logger = new Logger(StremioAddonProvider.name);
+  private readonly forbiddenCooldowns = new Map<string, number>();
 
   constructor(private readonly registry: AddonRegistryService) {}
 
@@ -58,9 +74,26 @@ export class StremioAddonProvider implements PlaybackProvider {
     const contentId = stremioContentId(ref);
     if (!contentId) return [];
     const type = ref.kind === 'movie' ? 'movie' : 'series';
-    const addons = this.registry.enabled().filter((addon) =>
+    const eligible = this.registry.enabled().filter((addon) =>
       supportsType(addon, type) && supportsId(addon, contentId),
-    ).filter((addon) => hasAddonResource(addon.manifest, 'stream'));;
+    );
+
+    const failures: { provider: string; message: string }[] = [];
+    const now = Date.now();
+    const addons = eligible.filter((addon) => {
+      const until = this.forbiddenCooldowns.get(addon.manifest.id);
+      if (!until) return true;
+      if (until <= now) {
+        this.forbiddenCooldowns.delete(addon.manifest.id);
+        return true;
+      }
+      const remainingMinutes = Math.max(1, Math.ceil((until - now) / 60_000));
+      failures.push({
+        provider: addon.manifest.name,
+        message: `HTTP 403 anterior; consulta pausada por mais ${remainingMinutes} min. Confira a configuração e a URL do manifest do addon.`,
+      });
+      return false;
+    });
 
     const results = await Promise.allSettled(
       addons.map(async (addon) => {
@@ -73,9 +106,7 @@ export class StremioAddonProvider implements PlaybackProvider {
 
           if (!response.ok) {
             const responseBody = await response.text().catch(() => '');
-
             const details = responseBody.slice(0, 300);
-
             throw new Error(
               `${addon.manifest.name}: HTTP ${response.status}` +
                 (details ? ` - ${details}` : ''),
@@ -83,7 +114,7 @@ export class StremioAddonProvider implements PlaybackProvider {
           }
 
           const data = (await response.json()) as { streams?: StremioStream[] };
-					this.registry.recordRequest(addon.manifest.id, true, Date.now() - startedAt);
+          this.registry.recordRequest(addon.manifest.id, true, Date.now() - startedAt);
 
           return (data.streams ?? []).flatMap((stream, index): PlaybackSource[] => {
             const label = [stream.name, stream.title, stream.description]
@@ -119,15 +150,15 @@ export class StremioAddonProvider implements PlaybackProvider {
               }];
             }
 
-            // Torrentio e outros addons Stremio retornam metadados torrent,
-            // não uma URL HTTP reproduzível pelo elemento <video>.
             if (stream.infoHash && isValidInfoHash(stream.infoHash)) {
+              const trackers = extractTrackers(stream.sources);
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
                 target: {
                   kind: 'torrent' as const,
                   infoHash: stream.infoHash.toLowerCase(),
                   ...(Number.isInteger(stream.fileIdx) ? { fileIdx: stream.fileIdx } : {}),
+                  ...(trackers.length ? { trackers } : {}),
                   ...(stream.externalUrl ? { externalUrl: stream.externalUrl } : {}),
                 },
               }];
@@ -137,14 +168,20 @@ export class StremioAddonProvider implements PlaybackProvider {
         } catch (error) {
           this.registry.recordRequest(addon.manifest.id, false, Date.now() - startedAt);
           const message = error instanceof Error ? error.message : String(error);
-          this.logger.warn(`Addon ${addon.manifest.name} falhou para ${contentId}: ${message}`);
-          throw error;
+          const status = Number(/HTTP (\d{3})/.exec(message)?.[1] ?? 0);
+          if (status === 403) {
+            this.forbiddenCooldowns.set(addon.manifest.id, Date.now() + FORBIDDEN_COOLDOWN_MS);
+          }
+          const configurationHint = status === 403 && addon.manifest.id.toLowerCase().includes('comet')
+            ? ' Verifique se STREMIO_ADDON_URLS contém a URL de manifest gerada pela página /configure do Comet; a URL pública sem configuração pode responder 403.'
+            : '';
+          this.logger.warn(`Addon ${addon.manifest.name} falhou para ${contentId}: ${message}${configurationHint}`);
+          throw new Error(`${message}${configurationHint}`);
         }
       }),
     );
 
     const sources: PlaybackSource[] = [];
-    const failures: { provider: string; message: string }[] = [];
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         sources.push(...result.value);
@@ -163,7 +200,7 @@ export class StremioAddonProvider implements PlaybackProvider {
 
     if (failures.length) {
       throw new ProviderSearchError(
-        `${failures.length} addon(s) falharam durante a busca`,
+        `${failures.length} addon(s) falharam ou estão temporariamente suspensos`,
         sources,
         failures,
       );
