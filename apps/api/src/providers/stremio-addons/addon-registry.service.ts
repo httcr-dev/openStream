@@ -105,6 +105,19 @@ export class AddonRegistryService implements OnModuleInit {
       score: Math.round(successRate * 1000 - averageLatencyMs / 100),
     };
   }
+
+}
+
+export function getAddonResources(manifest: StremioManifest): string[] {
+  return manifest.resources.map((resource) =>
+    typeof resource === 'string' ? resource : resource.name,
+  );
+}
+
+export function hasAddonResource(
+	manifest: StremioManifest, resourceName: string
+): boolean {
+  return getAddonResources(manifest).includes(resourceName);
 }
 
 export { normalizeBaseUrl };

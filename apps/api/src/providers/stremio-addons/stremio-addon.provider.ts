@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { MediaRef, PlaybackProvider, PlaybackSource } from '../provider.types.js';
 import { ProviderSearchError } from '../provider.types.js';
-import { AddonRegistryService } from './addon-registry.service.js';
+import { AddonRegistryService, hasAddonResource } from './addon-registry.service.js';
 import type { RegisteredAddon, StremioStream } from './addon.types.js';
 
 function supportsType(addon: RegisteredAddon, type: 'movie' | 'series'): boolean {
@@ -60,7 +60,7 @@ export class StremioAddonProvider implements PlaybackProvider {
     const type = ref.kind === 'movie' ? 'movie' : 'series';
     const addons = this.registry.enabled().filter((addon) =>
       supportsType(addon, type) && supportsId(addon, contentId),
-    );
+    ).filter((addon) => hasAddonResource(addon.manifest, 'stream'));;
 
     const results = await Promise.allSettled(
       addons.map(async (addon) => {
@@ -70,9 +70,21 @@ export class StremioAddonProvider implements PlaybackProvider {
             headers: { Accept: 'application/json' },
             signal: AbortSignal.timeout(10_000),
           });
-          if (!response.ok) throw new Error(`${addon.manifest.name}: HTTP ${response.status}`);
+
+          if (!response.ok) {
+            const responseBody = await response.text().catch(() => '');
+
+            const details = responseBody.slice(0, 300);
+
+            throw new Error(
+              `${addon.manifest.name}: HTTP ${response.status}` +
+                (details ? ` - ${details}` : ''),
+            );
+          }
+
           const data = (await response.json()) as { streams?: StremioStream[] };
-          this.registry.recordRequest(addon.manifest.id, true, Date.now() - startedAt);
+					this.registry.recordRequest(addon.manifest.id, true, Date.now() - startedAt);
+
           return (data.streams ?? []).flatMap((stream, index): PlaybackSource[] => {
             const label = [stream.name, stream.title, stream.description]
               .filter(Boolean)
