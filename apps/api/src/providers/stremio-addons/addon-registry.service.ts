@@ -4,7 +4,7 @@ import type { RegisteredAddon, StremioManifest, StremioResource } from './addon.
 
 const REQUEST_TIMEOUT_MS = 8_000;
 
-function supportsStream(manifest: StremioManifest): boolean {
+export function supportsStream(manifest: StremioManifest): boolean {
   return manifest.resources.some((resource: StremioResource) =>
     typeof resource === 'string' ? resource === 'stream' : resource.name === 'stream',
   );
@@ -35,8 +35,7 @@ export class AddonRegistryService implements OnModuleInit {
       .map((value) => value.trim())
       .filter(Boolean);
 
-    const results = await Promise.all(urls.map((url) => this.register(url)));
-    return results;
+    return Promise.all(urls.map((url) => this.register(url)));
   }
 
   private async register(manifestUrl: string): Promise<RegisteredAddon> {
@@ -52,8 +51,9 @@ export class AddonRegistryService implements OnModuleInit {
       if (!manifest.id || !manifest.name || !Array.isArray(manifest.resources)) {
         throw new Error('Manifest inválido: id, name e resources são obrigatórios');
       }
-      if (!supportsStream(manifest)) throw new Error('Addon não declara o recurso stream');
 
+      // Catálogo e legendas também são capabilities válidas. O provider de
+      // playback filtra addons sem "stream" na hora de consultar fontes.
       const addon: RegisteredAddon = {
         manifestUrl,
         baseUrl: normalizeBaseUrl(manifestUrl),
@@ -82,7 +82,7 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   enabled(): RegisteredAddon[] {
-    return this.list().filter((addon) => addon.status === 'ready');
+    return this.list().filter((addon) => addon.status === 'ready' && supportsStream(addon.manifest));
   }
 
   recordRequest(addonId: string, success: boolean, latencyMs: number): void {
@@ -102,7 +102,6 @@ export class AddonRegistryService implements OnModuleInit {
     const averageLatencyMs = requests ? Math.round(value.totalLatencyMs / requests) : 0;
     return {
       requests, successRate, averageLatencyMs, lastCheckedAt: value.lastCheckedAt,
-      // Ordenação adaptativa: confiabilidade primeiro, latência como desempate.
       score: Math.round(successRate * 1000 - averageLatencyMs / 100),
     };
   }
