@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { MediaRef, PlaybackProvider, PlaybackSource } from '../provider.types.js';
+import { ProviderSearchError } from '../provider.types.js';
 import { AddonRegistryService } from './addon-registry.service.js';
 import type { RegisteredAddon, StremioStream } from './addon.types.js';
 
@@ -21,10 +22,14 @@ function supportsId(addon: RegisteredAddon, id: string): boolean {
   return prefixes.some((prefix) => id.startsWith(prefix));
 }
 
+function isValidInfoHash(value: string): boolean {
+  return /^(?:[a-f\d]{40}|[a-z2-7]{32})$/i.test(value);
+}
+
 export function stremioContentId(ref: MediaRef): string | null {
   if (!ref.imdbId) return null;
   if (ref.kind === 'movie') return ref.imdbId;
-  if (!ref.season || !ref.episode) return null;
+  if (ref.season === undefined || ref.episode === undefined) return null;
   return `${ref.imdbId}:${ref.season}:${ref.episode}`;
 }
 
@@ -69,8 +74,6 @@ export class StremioAddonProvider implements PlaybackProvider {
           const data = (await response.json()) as { streams?: StremioStream[] };
           this.registry.recordRequest(addon.manifest.id, true, Date.now() - startedAt);
           return (data.streams ?? []).flatMap((stream, index): PlaybackSource[] => {
-            // MVP: URLs HTTP(S) diretas e IDs oficiais do YouTube.
-            // Torrents, debrid, externalUrl e streams com headers customizados ficam fora.
             const label = [stream.name, stream.title, stream.description]
               .filter(Boolean)
               .join(' · ') || addon.manifest.name;
@@ -88,24 +91,32 @@ export class StremioAddonProvider implements PlaybackProvider {
               }
               const transport = /\.m3u8(?:$|\?)/i.test(url.href) ? 'hls' : 'http';
               return [{
-                id,
-                provider: addon.manifest.name,
-                providerId: addon.manifest.id,
-                label,
+                id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
                 target: { kind: 'native' as const, transport, url: url.toString() },
               }];
             }
 
             if (stream.ytId && /^[\w-]{11}$/.test(stream.ytId)) {
               return [{
-                id,
-                provider: addon.manifest.name,
-                providerId: addon.manifest.id,
-                label,
+                id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
                 target: {
                   kind: 'embed' as const,
                   provider: 'youtube',
                   embedUrl: `https://www.youtube-nocookie.com/embed/${stream.ytId}`,
+                },
+              }];
+            }
+
+            // Torrentio e outros addons Stremio retornam metadados torrent,
+            // não uma URL HTTP reproduzível pelo elemento <video>.
+            if (stream.infoHash && isValidInfoHash(stream.infoHash)) {
+              return [{
+                id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
+                target: {
+                  kind: 'torrent' as const,
+                  infoHash: stream.infoHash.toLowerCase(),
+                  ...(Number.isInteger(stream.fileIdx) ? { fileIdx: stream.fileIdx } : {}),
+                  ...(stream.externalUrl ? { externalUrl: stream.externalUrl } : {}),
                 },
               }];
             }
@@ -120,7 +131,31 @@ export class StremioAddonProvider implements PlaybackProvider {
       }),
     );
 
-    return results.flatMap((result): PlaybackSource[] => result.status === 'fulfilled' ? result.value : [])
-      .sort((a, b) => this.registry.getHealth(b.providerId ?? '').score - this.registry.getHealth(a.providerId ?? '').score);
+    const sources: PlaybackSource[] = [];
+    const failures: { provider: string; message: string }[] = [];
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        sources.push(...result.value);
+      } else {
+        const reason = result.reason;
+        failures.push({
+          provider: addons[index].manifest.name,
+          message: reason instanceof Error ? reason.message : String(reason),
+        });
+      }
+    });
+
+    sources.sort((a, b) =>
+      this.registry.getHealth(b.providerId ?? '').score - this.registry.getHealth(a.providerId ?? '').score,
+    );
+
+    if (failures.length) {
+      throw new ProviderSearchError(
+        `${failures.length} addon(s) falharam durante a busca`,
+        sources,
+        failures,
+      );
+    }
+    return sources;
   }
 }
