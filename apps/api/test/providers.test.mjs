@@ -5,10 +5,25 @@ import { TtlCache } from '../dist/providers/ttl-cache.js';
 import { stremioContentId } from '../dist/providers/stremio-addons/stremio-addon.provider.js';
 import { normalizeBaseUrl } from '../dist/providers/stremio-addons/addon-registry.service.js';
 import { PlaybackSourceResolverService } from '../dist/providers/playback-source-resolver.service.js';
+import { parseByteRange } from '../dist/providers/torrent-playback.service.js';
 
 const movie = {
   id: 'tmdb:movie:10', kind: 'movie', tmdbId: 10, title: 'Example', imdbId: 'tt1234567',
 };
+
+test('parseByteRange aceita intervalos completos, abertos e sufixos', () => {
+  assert.deepEqual(parseByteRange('bytes=100-199', 1000), { start: 100, end: 199 });
+  assert.deepEqual(parseByteRange('bytes=900-', 1000), { start: 900, end: 999 });
+  assert.deepEqual(parseByteRange('bytes=-100', 1000), { start: 900, end: 999 });
+  assert.equal(parseByteRange(undefined, 1000), null);
+});
+
+test('parseByteRange rejeita ranges inválidos e múltiplos', () => {
+  assert.equal(parseByteRange('bytes=1000-1100', 1000), false);
+  assert.equal(parseByteRange('bytes=200-100', 1000), false);
+  assert.equal(parseByteRange('bytes=0-10,20-30', 1000), false);
+  assert.equal(parseByteRange('items=0-10', 1000), false);
+});
 
 test('ProviderRegistry registra e lista apenas providers habilitados', () => {
   const registry = new ProviderRegistry();
@@ -97,7 +112,7 @@ test('StremioAddonProvider consulta exatamente o episódio solicitado', async ()
   }
 });
 
-test('StremioAddonProvider preserva torrent como candidato de reprodução', async () => {
+test('StremioAddonProvider preserva trackers junto do candidato torrent', async () => {
   const addon = {
     manifestUrl: 'https://addon.example/manifest.json', baseUrl: 'https://addon.example',
     manifest: { id: 'addon.example', version: '1.0.0', name: 'Example Addon', resources: ['stream'], types: ['movie'] }, status: 'ready',
@@ -105,19 +120,22 @@ test('StremioAddonProvider preserva torrent como candidato de reprodução', asy
   const registry = { enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ streams: [{ name: 'Torrent 1080p', infoHash: 'abcdef0123456789abcdef0123456789abcdef01', fileIdx: 2 }] }), { status: 200 });
+  globalThis.fetch = async () => new Response(JSON.stringify({ streams: [{
+    name: 'Torrent', infoHash: 'abcdef0123456789abcdef0123456789abcdef01', fileIdx: 2,
+    sources: ['tracker:udp://tracker.example:6969', 'dht:'],
+  }] }), { status: 200 });
   try {
     const sources = await provider.findSources(movie);
     assert.equal(sources.length, 1);
     assert.equal(sources[0].target.kind, 'torrent');
-    assert.equal(sources[0].target.infoHash, 'abcdef0123456789abcdef0123456789abcdef01');
     assert.equal(sources[0].target.fileIdx, 2);
+    assert.deepEqual(sources[0].target.trackers, ['udp://tracker.example:6969']);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test('StremioAddonProvider mantém resultados válidos mesmo quando outro addon falha', async () => {
+test('StremioAddonProvider mantém resultados válidos quando outro addon falha com 403', async () => {
   const good = {
     manifestUrl: 'https://good.example/manifest.json', baseUrl: 'https://good.example',
     manifest: { id: 'good', version: '1.0.0', name: 'Good', resources: ['stream'] }, status: 'ready',
@@ -129,8 +147,9 @@ test('StremioAddonProvider mantém resultados válidos mesmo quando outro addon 
   const registry = { enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
+  let badRequests = 0;
   globalThis.fetch = async (url) => String(url).includes('bad.example')
-    ? new Response('Forbidden', { status: 403 })
+    ? (badRequests += 1, new Response('Forbidden', { status: 403 }))
     : new Response(JSON.stringify({ streams: [{ name: 'Torrent', infoHash: 'abcdef0123456789abcdef0123456789abcdef01' }] }), { status: 200 });
   try {
     await assert.rejects(provider.findSources(movie), (error) => {
@@ -139,6 +158,13 @@ test('StremioAddonProvider mantém resultados válidos mesmo quando outro addon 
       assert.equal(error.sources.length, 1);
       return true;
     });
+    await assert.rejects(provider.findSources(movie), (error) => {
+      assert.equal(error.failures.length, 1);
+      assert.match(error.failures[0].message, /pausada/);
+      assert.equal(error.sources.length, 1);
+      return true;
+    });
+    assert.equal(badRequests, 1);
   } finally {
     globalThis.fetch = originalFetch;
   }
