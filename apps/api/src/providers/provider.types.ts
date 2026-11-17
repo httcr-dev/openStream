@@ -15,7 +15,8 @@ export interface MediaRef {
 
 export type PlaybackTarget =
   | { kind: 'native'; transport: 'http' | 'hls'; url: string }
-  | { kind: 'embed'; provider: string; embedUrl: string };
+  | { kind: 'embed'; provider: string; embedUrl: string }
+  | { kind: 'torrent'; infoHash: string; fileIdx?: number; externalUrl?: string };
 
 export interface PlaybackSource {
   id: string;
@@ -25,6 +26,26 @@ export interface PlaybackSource {
   target: PlaybackTarget;
   /** ID do addon/provider que encontrou a fonte, usado para continuidade. */
   providerId?: string;
+}
+
+export interface ProviderSearchFailure {
+  provider: string;
+  message: string;
+}
+
+/**
+ * Um provider pode encontrar fontes válidas e, simultaneamente, falhar em
+ * outros addons. Mantemos ambos para não perder resultados parciais.
+ */
+export class ProviderSearchError extends Error {
+  constructor(
+    message: string,
+    public readonly sources: PlaybackSource[],
+    public readonly failures: ProviderSearchFailure[],
+  ) {
+    super(message);
+    this.name = 'ProviderSearchError';
+  }
 }
 
 export interface ProviderDescriptor {
