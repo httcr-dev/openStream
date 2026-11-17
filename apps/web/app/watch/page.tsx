@@ -18,6 +18,7 @@ function Watch() {
 
   const [title, setTitle] = useState('');
   const [sources, setSources] = useState<PlaybackSource[]>([]);
+  const [providerErrors, setProviderErrors] = useState<{ provider: string; message: string }[]>([]);
   const [current, setCurrent] = useState<string | null>(sourceId);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -31,6 +32,7 @@ function Watch() {
       .then((result) => {
         setTitle(result.media.title);
         setSources(result.sources);
+        setProviderErrors(result.errors ?? []);
         setCurrent((selected) => selected && result.sources.some((source) => source.id === selected)
           ? selected
           : result.sources[0]?.id ?? null);
@@ -107,17 +109,27 @@ function Watch() {
   return (
     <>
       <p><Link href={back} className="muted">← {title}{season && episode ? ` · T${season}E${episode}` : ''}</Link></p>
-      {active ? <Player source={active} /> : <p className="muted">Nenhuma fonte reproduzível encontrada para este conteúdo.</p>}
+      {active ? <Player source={active} /> : <p className="muted">Nenhuma fonte encontrada para este conteúdo.</p>}
       {active && <>
         <div className="sourcebar">
           {sources.map((source) => (
             <button key={source.id} className={source.id === active.id ? '' : 'secondary'} onClick={() => setCurrent(source.id)}>
-              {source.provider} · {source.target.kind === 'native' ? (source.quality ?? 'player próprio') : 'embed'}
+              {source.provider} · {source.target.kind === 'native'
+                ? (source.quality ?? 'player próprio')
+                : source.target.kind === 'torrent' ? 'torrent' : 'embed'}
             </button>
           ))}
         </div>
         <p className="muted">{active.label}</p>
       </>}
+      {providerErrors.length > 0 && (
+        <section aria-label="Falhas na busca de fontes">
+          <p className="muted">Alguns addons não responderam:</p>
+          {providerErrors.map((item, index) => (
+            <p className="muted" key={`${item.provider}-${index}`}>{item.provider}: {item.message}</p>
+          ))}
+        </section>
+      )}
       {season !== undefined && episode !== undefined && <div className="row" style={{ justifyContent: 'space-between' }}>
         {previousEpisode ? <Link className="btn secondary" href={episodeHref(previousEpisode)}>← Anterior · T{previousEpisode.season}E{previousEpisode.episode}</Link> : <span />}
         {nextEpisode ? <Link className="btn" href={episodeHref(nextEpisode)}>Próximo · T{nextEpisode.season}E{nextEpisode.episode} →</Link> : <span className="muted">Fim dos episódios disponíveis no catálogo</span>}
