@@ -4,13 +4,30 @@ import { useEffect, useRef, useState } from 'react';
 import type { PlaybackSource } from '@/lib/api';
 
 /**
- * Player único para os dois tipos de destino:
+ * Player único para os destinos reproduzíveis:
  * - native/http: <video> com Direct Play
  * - native/hls:  <video> com hls.js (ou HLS nativo no Safari/iOS)
  * - embed:       iframe com o player oficial do provedor
+ * - torrent:     candidato descoberto; requer engine P2P para reproduzir
  */
 export function Player({ source }: { source: PlaybackSource }) {
   const { target } = source;
+
+  if (target.kind === 'torrent') {
+    return (
+      <div className="player" style={{ display: 'grid', placeItems: 'center', padding: 24, textAlign: 'center' }}>
+        <div>
+          <strong>Fonte torrent encontrada</strong>
+          <p className="muted">O addon encontrou este arquivo, mas o OpenStream ainda não tem um mecanismo P2P para reproduzi-lo.</p>
+          <p className="muted">Info hash: <code>{target.infoHash}</code></p>
+          {target.fileIdx !== undefined && <p className="muted">Arquivo no torrent: {target.fileIdx}</p>}
+          {target.externalUrl && (
+            <p><a href={target.externalUrl} target="_blank" rel="noreferrer">Abrir página da fonte</a></p>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   if (target.kind === 'embed') {
     return (
@@ -44,7 +61,6 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
       return;
     }
 
-    // HLS nativo (Safari/iOS)
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = url;
       return;
