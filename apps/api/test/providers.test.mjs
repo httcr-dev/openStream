@@ -97,7 +97,7 @@ test('StremioAddonProvider consulta exatamente o episódio solicitado', async ()
   }
 });
 
-test('StremioAddonProvider não transforma torrent em fonte web reproduzível', async () => {
+test('StremioAddonProvider preserva torrent como candidato de reprodução', async () => {
   const addon = {
     manifestUrl: 'https://addon.example/manifest.json', baseUrl: 'https://addon.example',
     manifest: { id: 'addon.example', version: '1.0.0', name: 'Example Addon', resources: ['stream'], types: ['movie'] }, status: 'ready',
@@ -105,10 +105,40 @@ test('StremioAddonProvider não transforma torrent em fonte web reproduzível', 
   const registry = { enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ streams: [{ name: 'Torrent', infoHash: 'abcdef' }] }), { status: 200 });
+  globalThis.fetch = async () => new Response(JSON.stringify({ streams: [{ name: 'Torrent 1080p', infoHash: 'abcdef0123456789abcdef0123456789abcdef01', fileIdx: 2 }] }), { status: 200 });
   try {
     const sources = await provider.findSources(movie);
-    assert.deepEqual(sources, []);
+    assert.equal(sources.length, 1);
+    assert.equal(sources[0].target.kind, 'torrent');
+    assert.equal(sources[0].target.infoHash, 'abcdef0123456789abcdef0123456789abcdef01');
+    assert.equal(sources[0].target.fileIdx, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('StremioAddonProvider mantém resultados válidos mesmo quando outro addon falha', async () => {
+  const good = {
+    manifestUrl: 'https://good.example/manifest.json', baseUrl: 'https://good.example',
+    manifest: { id: 'good', version: '1.0.0', name: 'Good', resources: ['stream'] }, status: 'ready',
+  };
+  const bad = {
+    manifestUrl: 'https://bad.example/manifest.json', baseUrl: 'https://bad.example',
+    manifest: { id: 'bad', version: '1.0.0', name: 'Bad', resources: ['stream'] }, status: 'ready',
+  };
+  const registry = { enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
+  const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('bad.example')
+    ? new Response('Forbidden', { status: 403 })
+    : new Response(JSON.stringify({ streams: [{ name: 'Torrent', infoHash: 'abcdef0123456789abcdef0123456789abcdef01' }] }), { status: 200 });
+  try {
+    await assert.rejects(provider.findSources(movie), (error) => {
+      assert.equal(error.failures.length, 1);
+      assert.equal(error.failures[0].provider, 'Bad');
+      assert.equal(error.sources.length, 1);
+      return true;
+    });
   } finally {
     globalThis.fetch = originalFetch;
   }
