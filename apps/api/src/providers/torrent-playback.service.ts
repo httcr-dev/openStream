@@ -326,7 +326,8 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`Torrent downloading: hash=${infoHash}, peers=${torrent.numPeers}, downloaded=${torrent.downloaded}, lastChunk=${bytes}`);
       });
       torrent.on('warning', (error) => {
-        this.logger.warn(`Torrent warning for ${infoHash}: ${error.message}`);
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Torrent warning for ${infoHash}: ${message}`);
       });
 
       torrent.on('error', (error) => {

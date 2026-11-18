@@ -10,6 +10,11 @@
     "infra:up": "docker compose up -d",
     "infra:down": "docker compose down",
     "test": "pnpm --filter @openstream/api test",
-    "test:api": "pnpm --filter @openstream/api test"
+    "test:api": "pnpm --filter @openstream/api test",
+    "verify": "pnpm build && pnpm --filter @openstream/api test:unit",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "husky": "^9.1.7"
   }
 }
