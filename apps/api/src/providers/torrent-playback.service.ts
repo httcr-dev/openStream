@@ -19,6 +19,7 @@ import { join } from 'node:path';
 import WebTorrent, { type Torrent, type TorrentFile } from 'webtorrent';
 
 const METADATA_TIMEOUT_MS = 120_000;
+const FIRST_BYTE_TIMEOUT_MS = 45_000;
 const SESSION_IDLE_MS = 30 * 60_000;
 const MAX_ACTIVE_TORRENTS = 5;
 const VIDEO_EXTENSIONS = new Set([
@@ -210,8 +211,34 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
 
     try {
       const fileStream = file.createReadStream(range ? { start, end } : undefined);
-      fileStream.once('error', failStream);
-      fileStream.pipe(res);
+      let firstByteReceived = false;
+      const firstByteTimeout = setTimeout(() => {
+        if (firstByteReceived || res.destroyed) return;
+        this.logger.warn(
+          `Torrent stream stalled before first byte: hash=${infoHash}, peers=${session.torrent.then((torrent) => torrent.numPeers).catch(() => 0)}`,
+        );
+        fileStream.destroy(new Error('Tempo esgotado aguardando os primeiros dados dos peers.'));
+      }, FIRST_BYTE_TIMEOUT_MS);
+      firstByteTimeout.unref();
+
+      fileStream.once('error', (error) => {
+        clearTimeout(firstByteTimeout);
+        failStream(error);
+      });
+      fileStream.once('data', (chunk: Buffer) => {
+        firstByteReceived = true;
+        clearTimeout(firstByteTimeout);
+        if (res.destroyed) {
+          fileStream.destroy();
+          return;
+        }
+        res.write(chunk);
+        fileStream.pipe(res);
+      });
+      res.once('close', () => {
+        clearTimeout(firstByteTimeout);
+        if (!res.writableEnded) fileStream.destroy();
+      });
     } catch (error) {
       failStream(error instanceof Error ? error : new Error(String(error)));
     }
@@ -272,11 +299,26 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
         path: this.config.get<string>('OPENSTREAM_TORRENT_PATH') ?? join(tmpdir(), 'openstream-torrents'),
         strategy: 'sequential',
         addUID: true,
-      }, (readyTorrent) => {
-        if (settled) return;
-        settled = true;
-        clearTimeout(timeout);
-        resolve(readyTorrent);
+      });
+
+      let lastProgressLogAt = 0;
+      torrent.on('metadata', () => {
+        this.logger.log(`Torrent metadata received: hash=${infoHash}, files=${torrent.files.length}, trackers=${trackers.length}`);
+      });
+      torrent.on('wire', (wire) => {
+        this.logger.log(`Torrent peer connected: hash=${infoHash}, peers=${torrent.numPeers}, remote=${wire.remoteAddress ?? 'unknown'}`);
+      });
+      torrent.on('noPeers', (announceType) => {
+        this.logger.warn(`No torrent peers found: hash=${infoHash}, source=${announceType}, trackers=${trackers.length}`);
+      });
+      torrent.on('download', (bytes) => {
+        const now = Date.now();
+        if (now - lastProgressLogAt < 5_000) return;
+        lastProgressLogAt = now;
+        this.logger.log(`Torrent downloading: hash=${infoHash}, peers=${torrent.numPeers}, downloaded=${torrent.downloaded}, lastChunk=${bytes}`);
+      });
+      torrent.on('warning', (error) => {
+        this.logger.warn(`Torrent warning for ${infoHash}: ${error.message}`);
       });
 
       torrent.on('error', (error) => {
