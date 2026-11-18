@@ -218,10 +218,8 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
       let firstByteReceived = false;
       const firstByteTimeout = setTimeout(() => {
         if (firstByteReceived || res.destroyed) return;
-        this.logger.warn(
-          `Torrent stream stalled before first byte: hash=${infoHash}, peers=${session.torrent.then((torrent) => torrent.numPeers).catch(() => 0)}`,
-        );
-        fileStream.destroy(new Error('Tempo esgotado aguardando os primeiros dados dos peers.'));
+        this.logger.warn(`Torrent stream stalled before first byte: hash=${infoHash}`);
+        fileStream.destroy(new Error('FIRST_BYTE_TIMEOUT: aguardando dados dos peers.'));
       }, FIRST_BYTE_TIMEOUT_MS);
       firstByteTimeout.unref();
 
