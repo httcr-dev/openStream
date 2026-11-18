@@ -206,7 +206,11 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
       res.removeHeader('Content-Length');
       res.removeHeader('Content-Range');
       res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-      res.status(500).end('Falha ao ler o arquivo do torrent.');
+      res.status(error.message.startsWith('FIRST_BYTE_TIMEOUT:') ? 504 : 500).end(
+        error.message.startsWith('FIRST_BYTE_TIMEOUT:')
+          ? 'Nenhum dado chegou dos peers dentro do tempo limite.'
+          : 'Falha ao ler o arquivo do torrent.',
+      );
     };
 
     try {
