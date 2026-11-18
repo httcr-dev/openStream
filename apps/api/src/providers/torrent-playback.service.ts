@@ -301,6 +301,12 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
         path: this.config.get<string>('OPENSTREAM_TORRENT_PATH') ?? join(tmpdir(), 'openstream-torrents'),
         strategy: 'sequential',
         addUID: true,
+      }, (readyTorrent) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timeout);
+        this.logger.log(`Torrent ready: hash=${infoHash}, files=${readyTorrent.files.length}`);
+        resolve(readyTorrent);
       });
 
       let lastProgressLogAt = 0;
@@ -308,7 +314,7 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
         this.logger.log(`Torrent metadata received: hash=${infoHash}, files=${torrent.files.length}, trackers=${trackers.length}`);
       });
       torrent.on('wire', (wire) => {
-        this.logger.log(`Torrent peer connected: hash=${infoHash}, peers=${torrent.numPeers}, remote=${wire.remoteAddress ?? 'unknown'}`);
+        this.logger.log(`Torrent peer connected: hash=${infoHash}, peers=${torrent.numPeers}`);
       });
       torrent.on('noPeers', (announceType) => {
         this.logger.warn(`No torrent peers found: hash=${infoHash}, source=${announceType}, trackers=${trackers.length}`);
