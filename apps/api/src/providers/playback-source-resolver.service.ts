@@ -42,7 +42,10 @@ export class PlaybackSourceResolverService {
 
     const providers = this.registry.enabled();
     const settled = await Promise.allSettled(
-      providers.map((provider) => this.withTimeout(provider.findSources(media), 10_000)),
+      providers.map((provider) => this.withTimeout(
+        provider.findSources(media),
+        provider.id === 'stremio-addons' ? 60_000 : 10_000,
+      )),
     );
 
     const sources: PlaybackSource[] = [];
