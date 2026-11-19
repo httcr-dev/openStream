@@ -159,9 +159,9 @@ export class AddonRegistryService implements OnModuleInit {
     // Directory entries are loaded first; explicit user configuration wins on duplicate IDs.
     const uniqueDiscovered = [...new Set(discoveredUrls)];
     const uniqueManual = [...new Set(manualUrls)];
-    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url));
+    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url, 'directory'));
     // Run manual URLs last so a user's configured instance overrides a directory listing.
-    const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url));
+    const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url, 'manual'));
     const registered = [...discovered, ...manual];
     const uniqueReady = new Set(registered.filter((addon) => addon.status === 'ready').map((addon) => addon.manifest.id));
     this.logger.log(`Registro Stremio: ${uniqueReady.size} addon(s) válidos (${uniqueDiscovered.length} descobertos, ${uniqueManual.length} manuais).`);
@@ -209,7 +209,7 @@ export class AddonRegistryService implements OnModuleInit {
     }
   }
 
-  private async register(manifestUrl: string): Promise<RegisteredAddon> {
+  private async register(manifestUrl: string, source: 'directory' | 'manual'): Promise<RegisteredAddon> {
     try {
       const parsed = new URL(manifestUrl);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Protocolo de URL inválido');
@@ -227,6 +227,7 @@ export class AddonRegistryService implements OnModuleInit {
         baseUrl: normalizeBaseUrl(manifestUrl),
         manifest,
         status: 'ready',
+        source,
       };
       this.addons.set(manifest.id, addon);
       return addon;
@@ -238,6 +239,7 @@ export class AddonRegistryService implements OnModuleInit {
         baseUrl: '',
         manifest: { id: manifestUrl, version: '', name: manifestUrl, resources: [] },
         status: 'error',
+        source,
         error: message,
       };
       this.addons.set(manifestUrl, failed);
@@ -250,7 +252,8 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   enabled(): RegisteredAddon[] {
-    return this.list().filter((addon) => addon.status === 'ready' && supportsStream(addon.manifest));
+    return this.list().filter((addon) => addon.status === 'ready' && supportsStream(addon.manifest) &&
+      !(addon.source === 'directory' && addon.manifest.behaviorHints?.configurationRequired));
   }
 
   recordRequest(addonId: string, success: boolean, latencyMs: number): void {
