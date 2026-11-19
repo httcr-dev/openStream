@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import type { RegisteredAddon, StremioManifest, StremioResource } from './addon.types.js';
 
 const REQUEST_TIMEOUT_MS = 5_000;
-const DIRECTORY_TIMEOUT_MS = 12_000;
+const DIRECTORY_TIMEOUT_MS = 5_000;
 const DIRECTORY_PAGE_SIZE = 100;
 const MAX_DIRECTORY_PAGES = 2;
 const MANIFEST_CONCURRENCY = 25;
