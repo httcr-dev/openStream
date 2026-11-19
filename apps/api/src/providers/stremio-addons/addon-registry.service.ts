@@ -103,6 +103,12 @@ function readManifestUrls(value: unknown, output: Set<string>): void {
   if (entry.instances) readManifestUrls(entry.instances, output);
 }
 
+export function collectManifestUrls(value: unknown): string[] {
+  const urls = new Set<string>();
+  readManifestUrls(value, urls);
+  return [...urls];
+}
+
 async function mapWithConcurrency<T, R>(
   values: T[],
   concurrency: number,
@@ -169,7 +175,7 @@ export class AddonRegistryService implements OnModuleInit {
         if (!response.ok) throw new Error(`Directory respondeu HTTP ${response.status}`);
         const payload = (await response.json()) as DirectoryResponse;
         const entries = Array.isArray(payload.addons) ? payload.addons : Array.isArray(payload.data) ? payload.data : [];
-        readManifestUrls(entries, urls);
+        for (const manifestUrl of collectManifestUrls(entries)) urls.add(manifestUrl);
         const total = Number(payload.pagination?.total);
         const totalPages = Number(payload.pagination?.totalPages);
         const hasNextPage = payload.pagination?.hasNextPage;
