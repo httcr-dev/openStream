@@ -142,9 +142,14 @@ export class AddonRegistryService implements OnModuleInit {
       .filter(Boolean);
 
     // Directory entries are loaded first; explicit user configuration wins on duplicate IDs.
-    const urls = [...new Set([...discoveredUrls, ...manualUrls])];
-    const registered = await mapWithConcurrency(urls, MANIFEST_CONCURRENCY, (url) => this.register(url));
-    this.logger.log(`Registro Stremio: ${registered.filter((addon) => addon.status === 'ready').length} addon(s) válidos de ${urls.length} URL(s) (${discoveredUrls.length} descobertos, ${manualUrls.length} manuais).`);
+    const uniqueDiscovered = [...new Set(discoveredUrls)];
+    const uniqueManual = [...new Set(manualUrls)];
+    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url));
+    // Run manual URLs last so a user's configured instance overrides a directory listing.
+    const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url));
+    const registered = [...discovered, ...manual];
+    const uniqueReady = new Set(registered.filter((addon) => addon.status === 'ready').map((addon) => addon.manifest.id));
+    this.logger.log(`Registro Stremio: ${uniqueReady.size} addon(s) válidos (${uniqueDiscovered.length} descobertos, ${uniqueManual.length} manuais).`);
     return registered;
   }
 
