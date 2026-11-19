@@ -34,7 +34,9 @@ export function supportsStream(manifest: StremioManifest): boolean {
 
 function normalizeBaseUrl(manifestUrl: string): string {
   const url = new URL(manifestUrl);
-  url.pathname = url.pathname.replace(/\\/manifest\\.json\\/?$/i, '').replace(/\\/$/, '');
+  const suffix = '/manifest.json';
+  if (url.pathname.toLowerCase().endsWith(suffix)) url.pathname = url.pathname.slice(0, -suffix.length);
+  while (url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
   url.hash = '';
   return url.toString().replace(/\\/$/, '');
 }
@@ -64,7 +66,7 @@ export async function isSafeAddonUrl(value: string): Promise<boolean> {
   try {
     const url = new URL(value);
     if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false;
-    const hostname = url.hostname.toLowerCase().replace(/^\\[|\\]$/g, '');
+    const hostname = url.hostname.toLowerCase().replace('[', '').replace(']', '');
     if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') ||
         hostname.endsWith('.local') || hostname.endsWith('.internal')) return false;
     if (isIP(hostname)) return !isPrivateIp(hostname);
@@ -85,7 +87,16 @@ function readManifestUrls(value: unknown, output: Set<string>): void {
   for (const candidate of [entry.manifestUrl, entry.manifest_url, entry.manifestURL, entry.transportUrl, entry.endpoint]) {
     if (typeof candidate === 'string' && candidate.trim()) {
       const trimmed = candidate.trim();
-      output.add(/\\/manifest\\.json(?:[?#]|$)/i.test(trimmed) ? trimmed : `${trimmed.replace(/\\/$/, '')}/manifest.json`);
+      try {
+        const candidateUrl = new URL(trimmed);
+        if (!candidateUrl.pathname.toLowerCase().endsWith('/manifest.json')) {
+          while (candidateUrl.pathname.endsWith('/')) candidateUrl.pathname = candidateUrl.pathname.slice(0, -1);
+          candidateUrl.pathname += '/manifest.json';
+        }
+        output.add(candidateUrl.toString());
+      } catch {
+        // Ignore malformed directory entries.
+      }
     }
   }
   if (entry.instances) readManifestUrls(entry.instances, output);
