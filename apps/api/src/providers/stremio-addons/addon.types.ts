@@ -17,6 +17,7 @@ export interface RegisteredAddon {
   baseUrl: string;
   manifest: StremioManifest;
   status: 'ready' | 'error';
+  source?: 'directory' | 'manual';
   error?: string;
 }
 

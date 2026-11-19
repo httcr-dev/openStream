@@ -67,10 +67,11 @@ export class StremioAddonProvider implements PlaybackProvider {
   constructor(private readonly registry: AddonRegistryService) {}
 
   isEnabled(): boolean {
-    return this.registry.enabled().length > 0;
+    return this.registry.enabled().length > 0 || this.registry.discoveryEnabled();
   }
 
   async findSources(ref: MediaRef): Promise<PlaybackSource[]> {
+    await this.registry.waitUntilReady();
     const contentId = stremioContentId(ref);
     if (!contentId) return [];
     const type = ref.kind === 'movie' ? 'movie' : 'series';

@@ -1,8 +1,32 @@
+import { lookup } from 'node:dns/promises';
+import { isIP } from 'node:net';
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { RegisteredAddon, StremioManifest, StremioResource } from './addon.types.js';
 
-const REQUEST_TIMEOUT_MS = 8_000;
+const REQUEST_TIMEOUT_MS = 5_000;
+const DIRECTORY_TIMEOUT_MS = 5_000;
+const DIRECTORY_PAGE_SIZE = 100;
+const MAX_DIRECTORY_PAGES = 2;
+const MANIFEST_CONCURRENCY = 25;
+const DEFAULT_DIRECTORY_URL = 'https://addons-stremio.com/api/v1/addons';
+
+type DirectoryEntry = {
+  manifestUrl?: unknown;
+  manifest_url?: unknown;
+  manifestURL?: unknown;
+  transportUrl?: unknown;
+  endpoint?: unknown;
+  instances?: unknown;
+};
+
+type DirectoryResponse = {
+  addons?: unknown;
+  data?: unknown;
+  results?: unknown;
+  items?: unknown;
+  pagination?: { total?: unknown; totalPages?: unknown; hasNextPage?: unknown };
+};
 
 export function supportsStream(manifest: StremioManifest): boolean {
   return manifest.resources.some((resource: StremioResource) =>
@@ -12,9 +36,96 @@ export function supportsStream(manifest: StremioManifest): boolean {
 
 function normalizeBaseUrl(manifestUrl: string): string {
   const url = new URL(manifestUrl);
-  url.pathname = url.pathname.replace(/\/manifest\.json\/?$/i, '').replace(/\/$/, '');
+  const suffix = '/manifest.json';
+  if (url.pathname.toLowerCase().endsWith(suffix)) url.pathname = url.pathname.slice(0, -suffix.length);
+  while (url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
   url.hash = '';
-  return url.toString().replace(/\/$/, '');
+  const serialized = url.toString();
+  return serialized.endsWith('/') ? serialized.slice(0, -1) : serialized;
+}
+
+function isPrivateIpv4(address: string): boolean {
+  const parts = address.split('.').map(Number);
+  if (parts.length !== 4 || parts.some((part) => !Number.isInteger(part) || part < 0 || part > 255)) return true;
+  const [a, b] = parts;
+  return a === 0 || a === 10 || a === 127 || a >= 224 ||
+    (a === 169 && b === 254) || (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) || (a === 100 && b >= 64 && b <= 127);
+}
+
+function isPrivateIp(address: string): boolean {
+  if (isIP(address) === 4) return isPrivateIpv4(address);
+  if (isIP(address) === 6) {
+    const value = address.toLowerCase();
+    return value === '::' || value === '::1' || value.startsWith('fc') ||
+      value.startsWith('fd') || value.startsWith('fe8') || value.startsWith('fe9') ||
+      value.startsWith('fea') || value.startsWith('feb') || value.startsWith('::ffff:');
+  }
+  return true;
+}
+
+/** Rejects local/private targets before the API server makes outbound requests. */
+export async function isSafeAddonUrl(value: string): Promise<boolean> {
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) return false;
+    const hostname = url.hostname.toLowerCase().replace('[', '').replace(']', '');
+    if (!hostname || hostname === 'localhost' || hostname.endsWith('.localhost') ||
+        hostname.endsWith('.local') || hostname.endsWith('.internal')) return false;
+    if (isIP(hostname)) return !isPrivateIp(hostname);
+    const addresses = await lookup(hostname, { all: true, verbatim: true });
+    return addresses.length > 0 && addresses.every(({ address }) => !isPrivateIp(address));
+  } catch {
+    return false;
+  }
+}
+
+function readManifestUrls(value: unknown, output: Set<string>): void {
+  if (!value || typeof value !== 'object') return;
+  if (Array.isArray(value)) {
+    for (const item of value) readManifestUrls(item, output);
+    return;
+  }
+  const entry = value as DirectoryEntry;
+  for (const candidate of [entry.manifestUrl, entry.manifest_url, entry.manifestURL, entry.transportUrl, entry.endpoint]) {
+    if (typeof candidate === 'string' && candidate.trim()) {
+      const trimmed = candidate.trim();
+      try {
+        const candidateUrl = new URL(trimmed);
+        if (!candidateUrl.pathname.toLowerCase().endsWith('/manifest.json')) {
+          while (candidateUrl.pathname.endsWith('/')) candidateUrl.pathname = candidateUrl.pathname.slice(0, -1);
+          candidateUrl.pathname += '/manifest.json';
+        }
+        output.add(candidateUrl.toString());
+      } catch {
+        // Ignore malformed directory entries.
+      }
+    }
+  }
+  if (entry.instances) readManifestUrls(entry.instances, output);
+}
+
+export function collectManifestUrls(value: unknown): string[] {
+  const urls = new Set<string>();
+  readManifestUrls(value, urls);
+  return [...urls];
+}
+
+async function mapWithConcurrency<T, R>(
+  values: T[],
+  concurrency: number,
+  mapper: (value: T) => Promise<R>,
+): Promise<R[]> {
+  const results = new Array<R>(values.length);
+  let next = 0;
+  await Promise.all(Array.from({ length: Math.min(concurrency, values.length) }, async () => {
+    while (true) {
+      const index = next++;
+      if (index >= values.length) return;
+      results[index] = await mapper(values[index]);
+    }
+  }));
+  return results;
 }
 
 @Injectable()
@@ -25,20 +136,82 @@ export class AddonRegistryService implements OnModuleInit {
 
   constructor(private readonly config: ConfigService) {}
 
-  async onModuleInit(): Promise<void> {
-    await this.refresh();
+  private initialization: Promise<RegisteredAddon[]> = Promise.resolve([]);
+
+  onModuleInit(): void {
+    // Discovery runs in the background so a slow third-party directory cannot block API startup.
+    this.initialization = this.refresh();
+  }
+
+  async waitUntilReady(): Promise<void> {
+    await this.initialization;
+  }
+
+  discoveryEnabled(): boolean {
+    return this.config.get<string>('STREMIO_ADDON_DISCOVERY_ENABLED') !== 'false';
   }
 
   async refresh(): Promise<RegisteredAddon[]> {
-    const urls = (this.config.get<string>('STREMIO_ADDON_URLS') ?? '')
+    const discoveredUrls = this.discoveryEnabled() ? await this.discoverManifestUrls() : [];
+    const manualUrls = (this.config.get<string>('STREMIO_ADDON_URLS') ?? '')
       .split(',')
       .map((value) => value.trim())
       .filter(Boolean);
 
-    return Promise.all(urls.map((url) => this.register(url)));
+    // Directory entries are loaded first; explicit user configuration wins on duplicate IDs.
+    const uniqueDiscovered = [...new Set(discoveredUrls)];
+    const uniqueManual = [...new Set(manualUrls)];
+    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url, 'directory'));
+    // Run manual URLs last so a user's configured instance overrides a directory listing.
+    const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url, 'manual'));
+    const registered = [...discovered, ...manual];
+    const uniqueReady = new Set(registered.filter((addon) => addon.status === 'ready').map((addon) => addon.manifest.id));
+    this.logger.log(`Registro Stremio: ${uniqueReady.size} addon(s) válidos (${uniqueDiscovered.length} descobertos, ${uniqueManual.length} manuais).`);
+    return registered;
   }
 
-  private async register(manifestUrl: string): Promise<RegisteredAddon> {
+  private async discoverManifestUrls(): Promise<string[]> {
+    const directoryUrl = this.config.get<string>('STREMIO_ADDON_DIRECTORY_URL') ?? DEFAULT_DIRECTORY_URL;
+    const urls = new Set<string>();
+    try {
+      for (let page = 0; page < MAX_DIRECTORY_PAGES; page += 1) {
+        const url = new URL(directoryUrl);
+        url.searchParams.set('sort', 'stars');
+        url.searchParams.set('limit', String(DIRECTORY_PAGE_SIZE));
+        url.searchParams.set('offset', String(page * DIRECTORY_PAGE_SIZE));
+        const response = await fetch(url, {
+          headers: { Accept: 'application/json' },
+          signal: AbortSignal.timeout(DIRECTORY_TIMEOUT_MS),
+        });
+        if (!response.ok) throw new Error(`Directory respondeu HTTP ${response.status}`);
+        const payload = (await response.json()) as DirectoryResponse;
+        const entries = [payload.addons, payload.data, payload.results, payload.items].find(Array.isArray) ?? [];
+        for (const manifestUrl of collectManifestUrls(entries)) urls.add(manifestUrl);
+        const total = Number(payload.pagination?.total);
+        const totalPages = Number(payload.pagination?.totalPages);
+        const hasNextPage = payload.pagination?.hasNextPage;
+        if (entries.length < DIRECTORY_PAGE_SIZE ||
+            hasNextPage === false ||
+            (Number.isFinite(totalPages) && totalPages > 0 && page + 1 >= totalPages) ||
+            (Number.isFinite(total) && total > 0 && (page + 1) * DIRECTORY_PAGE_SIZE >= total)) break;
+      }
+      const candidates = [...urls];
+      const safety = await mapWithConcurrency(candidates, 30, isSafeAddonUrl);
+      const safeUrls = candidates.filter((url, index) => {
+        if (safety[index]) return true;
+        this.logger.warn(`Addon descoberto ignorado por URL insegura ou inacessível: ${url}`);
+        return false;
+      });
+      this.logger.log(`Directory Stremio: ${safeUrls.length} manifest(s) públicos encontrados.`);
+      return safeUrls;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Descoberta automática indisponível; mantendo addons manuais: ${message}`);
+      return [];
+    }
+  }
+
+  private async register(manifestUrl: string, source: 'directory' | 'manual'): Promise<RegisteredAddon> {
     try {
       const parsed = new URL(manifestUrl);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Protocolo de URL inválido');
@@ -51,14 +224,12 @@ export class AddonRegistryService implements OnModuleInit {
       if (!manifest.id || !manifest.name || !Array.isArray(manifest.resources)) {
         throw new Error('Manifest inválido: id, name e resources são obrigatórios');
       }
-
-      // Catálogo e legendas também são capabilities válidas. O provider de
-      // playback filtra addons sem "stream" na hora de consultar fontes.
       const addon: RegisteredAddon = {
         manifestUrl,
         baseUrl: normalizeBaseUrl(manifestUrl),
         manifest,
         status: 'ready',
+        source,
       };
       this.addons.set(manifest.id, addon);
       return addon;
@@ -70,6 +241,7 @@ export class AddonRegistryService implements OnModuleInit {
         baseUrl: '',
         manifest: { id: manifestUrl, version: '', name: manifestUrl, resources: [] },
         status: 'error',
+        source,
         error: message,
       };
       this.addons.set(manifestUrl, failed);
@@ -82,7 +254,8 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   enabled(): RegisteredAddon[] {
-    return this.list().filter((addon) => addon.status === 'ready' && supportsStream(addon.manifest));
+    return this.list().filter((addon) => addon.status === 'ready' && supportsStream(addon.manifest) &&
+      !(addon.source === 'directory' && addon.manifest.behaviorHints?.configurationRequired));
   }
 
   recordRequest(addonId: string, success: boolean, latencyMs: number): void {
@@ -105,7 +278,6 @@ export class AddonRegistryService implements OnModuleInit {
       score: Math.round(successRate * 1000 - averageLatencyMs / 100),
     };
   }
-
 }
 
 export function getAddonResources(manifest: StremioManifest): string[] {
@@ -114,9 +286,7 @@ export function getAddonResources(manifest: StremioManifest): string[] {
   );
 }
 
-export function hasAddonResource(
-	manifest: StremioManifest, resourceName: string
-): boolean {
+export function hasAddonResource(manifest: StremioManifest, resourceName: string): boolean {
   return getAddonResources(manifest).includes(resourceName);
 }
 
