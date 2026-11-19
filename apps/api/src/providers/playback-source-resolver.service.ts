@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { CatalogService } from '../catalog/catalog.service.js';
 import { ProviderRegistry } from './provider.registry.js';
+import { ProviderSearchError } from './provider.types.js';
 import type { MediaRef, PlaybackSource } from './provider.types.js';
 
 export interface ResolveResult {
@@ -34,15 +35,9 @@ export class PlaybackSourceResolverService {
 
     const detail = await this.catalog.detail(kind, tmdbId);
     const media: MediaRef = {
-      id,
-      kind,
-      tmdbId,
-      title: detail.title,
+      id, kind, tmdbId, title: detail.title,
       originalTitle: detail.originalTitle || undefined,
-      year: detail.year,
-      imdbId: detail.imdbId,
-      season,
-      episode,
+      year: detail.year, imdbId: detail.imdbId, season, episode,
     };
 
     const providers = this.registry.enabled();
@@ -56,19 +51,26 @@ export class PlaybackSourceResolverService {
       const provider = providers[index];
       if (result.status === 'fulfilled') {
         sources.push(...result.value);
-      } else {
-        const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
-        this.logger.warn(`Provider ${provider.id} falhou: ${message}`);
-        errors.push({ provider: provider.id, message });
+        return;
       }
+
+      const reason = result.reason;
+      if (reason instanceof ProviderSearchError) {
+        sources.push(...reason.sources);
+        errors.push(...reason.failures);
+        return;
+      }
+
+      const message = reason instanceof Error ? reason.message : String(reason);
+      this.logger.warn(`Provider ${provider.id} falhou: ${message}`);
+      errors.push({ provider: provider.id, message });
     });
 
-    // Prioriza a mesma origem ao avançar de episódio; depois, player nativo.
     sources.sort((a, b) => {
       const preferredA = Number(Boolean(preferredProviderId && a.providerId === preferredProviderId));
       const preferredB = Number(Boolean(preferredProviderId && b.providerId === preferredProviderId));
       if (preferredA !== preferredB) return preferredB - preferredA;
-      return Number(b.target.kind === 'native') - Number(a.target.kind === 'native');
+      return Number(b.target.kind !== 'embed') - Number(a.target.kind !== 'embed');
     });
     return { media, sources, errors };
   }

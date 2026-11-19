@@ -6,16 +6,19 @@ import { ProviderRegistry } from './provider.registry.js';
 import { ProvidersController } from './providers.controller.js';
 import { AddonRegistryService } from './stremio-addons/addon-registry.service.js';
 import { StremioAddonProvider } from './stremio-addons/stremio-addon.provider.js';
+import { TorrentPlaybackController } from './torrent-playback.controller.js';
+import { TorrentPlaybackService } from './torrent-playback.service.js';
 
 @Module({
   imports: [CatalogModule],
-  controllers: [ProvidersController],
+  controllers: [ProvidersController, TorrentPlaybackController],
   providers: [
     ProviderRegistry,
     PlaybackSourceResolverService,
     AddonRegistryService,
     StremioAddonProvider,
     InternetArchiveProvider,
+    TorrentPlaybackService,
   ],
 })
 export class ProvidersModule implements OnModuleInit {

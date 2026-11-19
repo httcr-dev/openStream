@@ -1,16 +1,21 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import type { PlaybackSource } from '@/lib/api';
+import { torrentStreamUrl, type PlaybackSource } from '@/lib/api';
 
 /**
- * Player único para os dois tipos de destino:
+ * Player único para os destinos reproduzíveis:
  * - native/http: <video> com Direct Play
  * - native/hls:  <video> com hls.js (ou HLS nativo no Safari/iOS)
  * - embed:       iframe com o player oficial do provedor
+ * - torrent:     WebTorrent no backend, exposto como HTTP com suporte a Range
  */
 export function Player({ source }: { source: PlaybackSource }) {
   const { target } = source;
+
+  if (target.kind === 'torrent') {
+    return <NativePlayer key={source.id} transport="http" url={torrentStreamUrl(target)} />;
+  }
 
   if (target.kind === 'embed') {
     return (
@@ -44,7 +49,6 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
       return;
     }
 
-    // HLS nativo (Safari/iOS)
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = url;
       return;
@@ -75,7 +79,17 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
   return (
     <>
       <div className="player">
-        <video ref={ref} controls playsInline preload="metadata" onError={() => transport === 'http' && setError('Não foi possível reproduzir este arquivo (formato não suportado pelo navegador?). Tente a fonte HLS.')} />
+        <video
+          ref={ref}
+          controls
+          playsInline
+          preload="metadata"
+          onError={() => setError(
+            transport === 'http'
+              ? 'Não foi possível reproduzir este arquivo. Verifique se há peers disponíveis e se o navegador suporta o codec.'
+              : 'Não foi possível reproduzir este arquivo (formato não suportado pelo navegador?). Tente outra fonte.',
+          )}
+        />
       </div>
       {error && <p className="err">{error}</p>}
     </>

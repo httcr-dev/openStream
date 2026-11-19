@@ -28,7 +28,8 @@ export interface Episode {
 
 export type PlaybackTarget =
   | { kind: 'native'; transport: 'http' | 'hls'; url: string }
-  | { kind: 'embed'; provider: string; embedUrl: string };
+  | { kind: 'embed'; provider: string; embedUrl: string }
+  | { kind: 'torrent'; infoHash: string; fileIdx?: number; trackers?: string[]; externalUrl?: string };
 
 export interface PlaybackSource {
   id: string;
@@ -63,6 +64,14 @@ async function get<T>(path: string): Promise<T> {
     throw new Error(message);
   }
   return (await res.json()) as T;
+}
+
+export function torrentStreamUrl(target: Extract<PlaybackTarget, { kind: 'torrent' }>): string {
+  const url = new URL(
+    `${API_URL.replace(/\/$/, '')}/playback/torrents/${encodeURIComponent(target.infoHash)}/${target.fileIdx ?? -1}/stream`,
+  );
+  for (const tracker of target.trackers ?? []) url.searchParams.append('tracker', tracker);
+  return url.toString();
 }
 
 export const api = {

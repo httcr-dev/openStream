@@ -29,5 +29,6 @@ export interface StremioStream {
   infoHash?: string;
   fileIdx?: number;
   externalUrl?: string;
+  sources?: string[];
   behaviorHints?: { notWebReady?: boolean; proxyHeaders?: unknown };
 }
