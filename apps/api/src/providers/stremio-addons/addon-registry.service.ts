@@ -38,7 +38,8 @@ function normalizeBaseUrl(manifestUrl: string): string {
   if (url.pathname.toLowerCase().endsWith(suffix)) url.pathname = url.pathname.slice(0, -suffix.length);
   while (url.pathname.endsWith('/')) url.pathname = url.pathname.slice(0, -1);
   url.hash = '';
-  return url.toString().replace(/\\/$/, '');
+  const serialized = url.toString();
+  return serialized.endsWith('/') ? serialized.slice(0, -1) : serialized;
 }
 
 function isPrivateIpv4(address: string): boolean {
