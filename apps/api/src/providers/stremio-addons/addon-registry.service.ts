@@ -134,14 +134,23 @@ export class AddonRegistryService implements OnModuleInit {
 
   constructor(private readonly config: ConfigService) {}
 
-  async onModuleInit(): Promise<void> {
-    await this.refresh();
+  private initialization: Promise<RegisteredAddon[]> = Promise.resolve([]);
+
+  onModuleInit(): void {
+    // Discovery runs in the background so a slow third-party directory cannot block API startup.
+    this.initialization = this.refresh();
+  }
+
+  async waitUntilReady(): Promise<void> {
+    await this.initialization;
+  }
+
+  discoveryEnabled(): boolean {
+    return this.config.get<string>('STREMIO_ADDON_DISCOVERY_ENABLED') !== 'false';
   }
 
   async refresh(): Promise<RegisteredAddon[]> {
-    const discoveredUrls = this.config.get<string>('STREMIO_ADDON_DISCOVERY_ENABLED') === 'false'
-      ? []
-      : await this.discoverManifestUrls();
+    const discoveredUrls = this.discoveryEnabled() ? await this.discoverManifestUrls() : [];
     const manualUrls = (this.config.get<string>('STREMIO_ADDON_URLS') ?? '')
       .split(',')
       .map((value) => value.trim())
@@ -184,11 +193,13 @@ export class AddonRegistryService implements OnModuleInit {
             (Number.isFinite(totalPages) && totalPages > 0 && page + 1 >= totalPages) ||
             (Number.isFinite(total) && total > 0 && (page + 1) * DIRECTORY_PAGE_SIZE >= total)) break;
       }
-      const safeUrls: string[] = [];
-      for (const url of urls) {
-        if (await isSafeAddonUrl(url)) safeUrls.push(url);
-        else this.logger.warn(`Addon descoberto ignorado por URL insegura ou inacessível: ${url}`);
-      }
+      const candidates = [...urls];
+      const safety = await mapWithConcurrency(candidates, 30, isSafeAddonUrl);
+      const safeUrls = candidates.filter((url, index) => {
+        if (safety[index]) return true;
+        this.logger.warn(`Addon descoberto ignorado por URL insegura ou inacessível: ${url}`);
+        return false;
+      });
       this.logger.log(`Directory Stremio: ${safeUrls.length} manifest(s) públicos encontrados.`);
       return safeUrls;
     } catch (error) {
