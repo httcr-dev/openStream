@@ -23,6 +23,8 @@ type DirectoryEntry = {
 type DirectoryResponse = {
   addons?: unknown;
   data?: unknown;
+  results?: unknown;
+  items?: unknown;
   pagination?: { total?: unknown; totalPages?: unknown; hasNextPage?: unknown };
 };
 
@@ -183,7 +185,7 @@ export class AddonRegistryService implements OnModuleInit {
         });
         if (!response.ok) throw new Error(`Directory respondeu HTTP ${response.status}`);
         const payload = (await response.json()) as DirectoryResponse;
-        const entries = Array.isArray(payload.addons) ? payload.addons : Array.isArray(payload.data) ? payload.data : [];
+        const entries = [payload.addons, payload.data, payload.results, payload.items].find(Array.isArray) ?? [];
         for (const manifestUrl of collectManifestUrls(entries)) urls.add(manifestUrl);
         const total = Number(payload.pagination?.total);
         const totalPages = Number(payload.pagination?.totalPages);
