@@ -33,7 +33,7 @@ function readCreativeCommonsLicense(value: string | undefined): { status: 'publi
   if (!value) return null;
   try {
     const url = new URL(value);
-    if (url.hostname !== 'creativecommons.org' || url.search || url.hash) return null;
+    if (url.protocol !== 'https:' || url.hostname !== 'creativecommons.org' || url.search || url.hash) return null;
     const path = url.pathname.replace(/\/+$/, '');
     if (/^\/publicdomain\/(?:mark|zero)\/1\.0$/.test(path)) {
       return { status: 'public-domain', licenseUrl: url.toString() };
@@ -49,7 +49,7 @@ function readCreativeCommonsLicense(value: string | undefined): { status: 'publi
 
 function archiveDownloadUrl(identifier: string, filename: string): string {
   const encodedPath = filename.split('/').map((part) => encodeURIComponent(part)).join('/');
-  return `https://archive.org/download/${encodeURIComponent(identifier)}/${encodedPath}`;
+  return \`https://archive.org/download/\${encodeURIComponent(identifier)}/\${encodedPath}\`;
 }
 
 @Injectable()
@@ -67,29 +67,28 @@ export class InternetArchiveProvider implements PlaybackProvider {
   }
 
   async findSources(ref: MediaRef): Promise<PlaybackSource[]> {
-    // Ainda não há uma relação confiável de série/temporada/episódio neste provider.
     if (ref.kind !== 'movie') return [];
     const titles = [...new Set([ref.title, ref.originalTitle].filter((value): value is string => Boolean(value)))];
-    const key = `${titles.map(normalizeTitle).join('|')}|${ref.year ?? ''}`;
+    const key = \`\${titles.map(normalizeTitle).join('|')}|\${ref.year ?? ''}\`;
     return this.cache.getOrSet(key, () => this.search(titles, ref));
   }
 
   private async search(titles: string[], ref: MediaRef): Promise<PlaybackSource[]> {
     const safe = (value: string) => value.replace(/["\\]/g, ' ').trim();
-    const titleQuery = titles.map((title) => `title:"${safe(title)}"`).join(' OR ');
+    const titleQuery = titles.map((title) => \`title:"\${safe(title)}"\`).join(' OR ');
     const params = new URLSearchParams({
-      q: `(${titleQuery}) AND mediatype:movies`,
+      q: \`(\${titleQuery}) AND mediatype:movies\`,
       rows: '50',
       output: 'json',
       sort: 'downloads desc',
     });
     for (const field of ['identifier', 'title', 'year']) params.append('fl[]', field);
 
-    const response = await fetch(`https://archive.org/advancedsearch.php?${params}`, {
+    const response = await fetch(\`https://archive.org/advancedsearch.php?\${params}\`, {
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(10_000),
     });
-    if (!response.ok) throw new Error(`Internet Archive respondeu ${response.status}`);
+    if (!response.ok) throw new Error(\`Internet Archive respondeu \${response.status}\`);
     const data = await response.json() as { response?: { docs?: ArchiveDocument[] } };
     const acceptedTitles = new Set(titles.map(normalizeTitle));
     const candidates = (data.response?.docs ?? []).filter((doc) => {
@@ -99,23 +98,26 @@ export class InternetArchiveProvider implements PlaybackProvider {
     });
 
     const results = await Promise.allSettled(candidates.map(async (doc): Promise<PlaybackSource | null> => {
-      const metadataResponse = await fetch(`https://archive.org/metadata/${encodeURIComponent(doc.identifier)}`, {
+      const metadataResponse = await fetch(\`https://archive.org/metadata/\${encodeURIComponent(doc.identifier)}\`, {
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(10_000),
       });
       if (!metadataResponse.ok) return null;
       const metadata = await metadataResponse.json() as ArchiveMetadata;
+      const authorization = readCreativeCommonsLicense(metadata.metadata?.licenseurl);
+      if (!authorization) return null;
       const file = (metadata.files ?? [])
         .filter(isPlayableVideo)
         .sort((a, b) => Number(/\.mp4$/i.test(b.name ?? '')) - Number(/\.mp4$/i.test(a.name ?? '')))[0];
       if (!file?.name) return null;
 
       return {
-        id: `internet-archive:${doc.identifier}:${file.name}`,
+        id: \`internet-archive:\${doc.identifier}:\${file.name}\`,
         provider: this.name,
         providerId: this.id,
-        label: `${doc.title}${doc.year ? ` (${doc.year})` : ''} · ${file.format ?? file.name.split('.').pop()?.toUpperCase() ?? 'Vídeo'}`,
-        target: { kind: 'native', transport: 'http', url: archiveDownloadUrl(doc.identifier, file.name) },\n        authorization,
+        label: \`\${doc.title}\${doc.year ? \` (\${doc.year})\` : ''} · \${file.format ?? file.name.split('.').pop()?.toUpperCase() ?? 'Vídeo'}\`,
+        target: { kind: 'native', transport: 'http', url: archiveDownloadUrl(doc.identifier, file.name) },
+        authorization,
       };
     }));
 
