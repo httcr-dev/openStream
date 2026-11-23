@@ -1,22 +1,19 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable } from '@nestjs/common';
 import { CatalogService } from '../catalog/catalog.service.js';
-import { ProviderRegistry } from './provider.registry.js';
-import { ProviderSearchError } from './provider.types.js';
-import type { MediaRef, PlaybackSource } from './provider.types.js';
+import { SourceDiscoveryService } from './source-discovery.service.js';
+import type { MediaRef } from './provider.types.js';
 
 export interface ResolveResult {
   media: MediaRef;
-  sources: PlaybackSource[];
+  sources: import('./provider.types.js').PlaybackSource[];
   errors: { provider: string; message: string }[];
 }
 
 @Injectable()
 export class PlaybackSourceResolverService {
-  private readonly logger = new Logger(PlaybackSourceResolverService.name);
-
   constructor(
     private readonly catalog: CatalogService,
-    private readonly registry: ProviderRegistry,
+    private readonly discovery: SourceDiscoveryService,
   ) {}
 
   async resolve(
@@ -40,51 +37,7 @@ export class PlaybackSourceResolverService {
       year: detail.year, imdbId: detail.imdbId, season, episode,
     };
 
-    const providers = this.registry.enabled();
-    const settled = await Promise.allSettled(
-      providers.map((provider) => this.withTimeout(
-        provider.findSources(media),
-        provider.id === 'stremio-addons' ? 60_000 : 10_000,
-      )),
-    );
-
-    const sources: PlaybackSource[] = [];
-    const errors: ResolveResult['errors'] = [];
-    settled.forEach((result, index) => {
-      const provider = providers[index];
-      if (result.status === 'fulfilled') {
-        sources.push(...result.value);
-        return;
-      }
-
-      const reason = result.reason;
-      if (reason instanceof ProviderSearchError) {
-        sources.push(...reason.sources);
-        errors.push(...reason.failures);
-        return;
-      }
-
-      const message = reason instanceof Error ? reason.message : String(reason);
-      this.logger.warn(`Provider ${provider.id} falhou: ${message}`);
-      errors.push({ provider: provider.id, message });
-    });
-
-    sources.sort((a, b) => {
-      const preferredA = Number(Boolean(preferredProviderId && a.providerId === preferredProviderId));
-      const preferredB = Number(Boolean(preferredProviderId && b.providerId === preferredProviderId));
-      if (preferredA !== preferredB) return preferredB - preferredA;
-      return Number(b.target.kind !== 'embed') - Number(a.target.kind !== 'embed');
-    });
-    return { media, sources, errors };
-  }
-
-  private withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-    return new Promise<T>((resolve, reject) => {
-      const timer = setTimeout(() => reject(new Error(`timeout de ${ms}ms`)), ms);
-      promise.then(
-        (value) => { clearTimeout(timer); resolve(value); },
-        (error) => { clearTimeout(timer); reject(error); },
-      );
-    });
+    const result = await this.discovery.discover(media, preferredProviderId);
+    return { media, ...result };
   }
 }
