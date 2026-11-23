@@ -8,6 +8,11 @@ export class TorrentPlaybackController {
 
   constructor(private readonly torrents: TorrentPlaybackService) {}
 
+  @Get('stats')
+  stats() {
+    return this.torrents.getStats();
+  }
+
   @Get(':infoHash/:fileIdx/stream')
   stream(
     @Param('infoHash') infoHash: string,
