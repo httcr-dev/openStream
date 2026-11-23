@@ -4,6 +4,8 @@ import { InternetArchiveProvider } from './internet-archive/internet-archive.pro
 import { PlaybackSourceResolverService } from './playback-source-resolver.service.js';
 import { ProviderRegistry } from './provider.registry.js';
 import { SourceDiscoveryService } from './source-discovery.service.js';
+import { SourceAvailabilityValidatorService } from './source-availability-validator.service.js';
+import { SourceUrlSafetyService } from './source-url-safety.service.js';
 import { ProvidersController } from './providers.controller.js';
 import { AddonRegistryService } from './stremio-addons/addon-registry.service.js';
 import { StremioAddonProvider } from './stremio-addons/stremio-addon.provider.js';
@@ -17,6 +19,8 @@ import { TorrentPlaybackService } from './torrent-playback.service.js';
     ProviderRegistry,
     PlaybackSourceResolverService,
     SourceDiscoveryService,
+    SourceAvailabilityValidatorService,
+    SourceUrlSafetyService,
     AddonRegistryService,
     StremioAddonProvider,
     InternetArchiveProvider,
