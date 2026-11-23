@@ -28,7 +28,7 @@ function isPlayableVideo(file: ArchiveFile): boolean {
   return /\.(mp4|m4v|webm|mov|mkv)$/i.test(name);
 }
 
-function archiveDownloadUrl(identifier: string, filename: string): string {
+function readCreativeCommonsLicense(value: string | undefined): { status: 'public-domain' | 'creative-commons'; licenseUrl: string } | null {\n  if (!value) return null;\n  try {\n    const url = new URL(value);\n    if (url.hostname !== 'creativecommons.org' || url.search || url.hash) return null;\n    const path = url.pathname.replace(/\\/+$/, '');\n    if (/^\\/publicdomain\\/(?:mark|zero)\\/1\\.0$/.test(path)) {\n      return { status: 'public-domain', licenseUrl: url.toString() };\n    }\n    if (/^\\/licenses\\/(?:by|by-sa|by-nd|by-nc|by-nc-sa|by-nc-nd)\\/\\d(?:\\.\\d)?$/.test(path)) {\n      return { status: 'creative-commons', licenseUrl: url.toString() };\n    }\n    return null;\n  } catch {\n    return null;\n  }\n}\n\nfunction archiveDownloadUrl(identifier: string, filename: string): string {
   const encodedPath = filename.split('/').map((part) => encodeURIComponent(part)).join('/');
   return `https://archive.org/download/${encodeURIComponent(identifier)}/${encodedPath}`;
 }
@@ -38,7 +38,7 @@ export class InternetArchiveProvider implements PlaybackProvider {
   readonly id = 'internet-archive';
   readonly name = 'Internet Archive';
   readonly playerKind = 'native' as const;
-  readonly note = 'Busca arquivos de vídeo reproduzíveis no Internet Archive com correspondência exata de título.';
+  readonly note = 'Busca vídeos com título exato e licença Creative Commons ou domínio público identificada nos metadados.';
   private readonly cache = new TtlCache<PlaybackSource[]>(60 * 60 * 1000);
 
   constructor(private readonly config: ConfigService) {}
@@ -96,7 +96,7 @@ export class InternetArchiveProvider implements PlaybackProvider {
         provider: this.name,
         providerId: this.id,
         label: `${doc.title}${doc.year ? ` (${doc.year})` : ''} · ${file.format ?? file.name.split('.').pop()?.toUpperCase() ?? 'Vídeo'}`,
-        target: { kind: 'native', transport: 'http', url: archiveDownloadUrl(doc.identifier, file.name) },
+        target: { kind: 'native', transport: 'http', url: archiveDownloadUrl(doc.identifier, file.name) },\n        authorization,
       };
     }));
 
