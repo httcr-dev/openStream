@@ -102,10 +102,11 @@ function readManifestUrls(value: unknown, output: Set<string>): void {
       const trimmed = candidate.trim();
       try {
         const candidateUrl = new URL(trimmed);
-        if (!candidateUrl.pathname.toLowerCase().endsWith('/manifest.json')) {
-          while (candidateUrl.pathname.endsWith('/')) candidateUrl.pathname = candidateUrl.pathname.slice(0, -1);
-          candidateUrl.pathname += '/manifest.json';
+        let pathname = candidateUrl.pathname.replace(/\/+$/, '');
+        if (!pathname.toLowerCase().endsWith('/manifest.json')) {
+          pathname += '/manifest.json';
         }
+        candidateUrl.pathname = pathname || '/manifest.json';
         output.add(candidateUrl.toString());
       } catch {
         // Ignore malformed directory entries.
