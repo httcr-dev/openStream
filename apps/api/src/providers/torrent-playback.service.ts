@@ -28,11 +28,25 @@ const VIDEO_EXTENSIONS = new Set([
 
 type ByteRange = { start: number; end: number };
 
-type TorrentSession = {
-  torrent: Promise<Torrent>;
+type TorrentSessionMetrics = {
+  createdAt: number;
   lastUsedAt: number;
   activeStreams: number;
+  streamRequests: number;
+  trackersCount: number;
+  peerCount: number;
+  downloadedBytes: number;
+  lastPeerAt: number | null;
+  lastDownloadAt: number | null;
+  metadataAt: number | null;
+  readyAt: number | null;
+  firstByteTimeouts: number;
+  noPeersEvents: number;
+  trackerWarnings: number;
+  lastError: string | null;
 };
+
+type TorrentSession = TorrentSessionMetrics & { torrent: Promise<Torrent> };
 
 export function parseByteRange(header: string | undefined, size: number): ByteRange | null | false {
   if (!header) return null;
@@ -150,6 +164,36 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
     this.cleanupTimer.unref();
   }
 
+  getStats() {
+    const now = Date.now();
+    const sessions = [...this.sessions.entries()].map(([infoHash, session]) => ({
+      infoHash: `${infoHash.slice(0, 8)}…`,
+      state: session.readyAt ? (session.activeStreams > 0 ? 'streaming' : 'ready') : 'fetching-metadata',
+      ageMs: now - session.createdAt,
+      lastUsedAgoMs: now - session.lastUsedAt,
+      activeStreams: session.activeStreams,
+      streamRequests: session.streamRequests,
+      trackersCount: session.trackersCount,
+      peers: session.peerCount,
+      downloadedBytes: session.downloadedBytes,
+      lastPeerAt: session.lastPeerAt,
+      lastDownloadAt: session.lastDownloadAt,
+      metadataAt: session.metadataAt,
+      readyAt: session.readyAt,
+      firstByteTimeouts: session.firstByteTimeouts,
+      noPeersEvents: session.noPeersEvents,
+      trackerWarnings: session.trackerWarnings,
+      lastError: session.lastError,
+    }));
+    return {
+      clientReady: Boolean(this.client && !this.client.destroyed),
+      activeSessions: sessions.length,
+      activeStreams: sessions.reduce((total, session) => total + session.activeStreams, 0),
+      limits: { maxActiveTorrents: MAX_ACTIVE_TORRENTS, metadataTimeoutMs: METADATA_TIMEOUT_MS, firstByteTimeoutMs: FIRST_BYTE_TIMEOUT_MS },
+      sessions,
+    };
+  }
+
   async onModuleDestroy(): Promise<void> {
     if (this.cleanupTimer) clearInterval(this.cleanupTimer);
     if (!this.client) return;
@@ -166,6 +210,8 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
     );
     const { session, file } = await this.getFile(infoHash, fileIdx, trackers);
     session.lastUsedAt = Date.now();
+    session.streamRequests += 1;
+    const streamStartedAt = Date.now();
 
     const range = parseByteRange(req.headers.range, file.length);
     if (range === false) {
@@ -218,7 +264,9 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
       let firstByteReceived = false;
       const firstByteTimeout = setTimeout(() => {
         if (firstByteReceived || res.destroyed) return;
-        this.logger.warn(`Torrent stream stalled before first byte: hash=${infoHash}`);
+        session.firstByteTimeouts += 1;
+        session.lastError = 'FIRST_BYTE_TIMEOUT';
+        this.logger.warn(`Torrent first-byte timeout: hash=${infoHash}, peers=${session.peerCount}, downloaded=${session.downloadedBytes}, trackers=${session.trackersCount}, elapsedMs=${Date.now() - streamStartedAt}`);
         fileStream.destroy(new Error('FIRST_BYTE_TIMEOUT: aguardando dados dos peers.'));
       }, FIRST_BYTE_TIMEOUT_MS);
       firstByteTimeout.unref();
@@ -229,6 +277,9 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
       });
       fileStream.once('data', (chunk: Buffer) => {
         firstByteReceived = true;
+        session.lastError = null;
+        session.lastUsedAt = Date.now();
+        this.logger.log(`Torrent first byte received: hash=${infoHash}, peers=${session.peerCount}, elapsedMs=${Date.now() - streamStartedAt}, bytes=${chunk.length}`);
         clearTimeout(firstByteTimeout);
         if (res.destroyed) {
           fileStream.destroy();
@@ -256,11 +307,14 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
       if (this.sessions.size >= MAX_ACTIVE_TORRENTS) {
         throw new HttpException('Limite de torrents ativos atingido. Tente novamente em alguns minutos.', HttpStatus.TOO_MANY_REQUESTS);
       }
-      session = {
-        torrent: this.addTorrent(infoHash, trackers),
-        lastUsedAt: Date.now(),
-        activeStreams: 0,
+      const createdAt = Date.now();
+      const metrics: TorrentSessionMetrics = {
+        createdAt, lastUsedAt: createdAt, activeStreams: 0, streamRequests: 0,
+        trackersCount: trackers.length, peerCount: 0, downloadedBytes: 0,
+        lastPeerAt: null, lastDownloadAt: null, metadataAt: null, readyAt: null,
+        firstByteTimeouts: 0, noPeersEvents: 0, trackerWarnings: 0, lastError: null,
       };
+      session = { ...metrics, torrent: this.addTorrent(infoHash, trackers, metrics) };
       this.sessions.set(infoHash, session);
       const current = session;
       void current.torrent.catch(() => {
@@ -283,7 +337,7 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
     return { session, file };
   }
 
-  private addTorrent(infoHash: string, trackers: string[]): Promise<Torrent> {
+  private addTorrent(infoHash: string, trackers: string[], metrics: TorrentSessionMetrics): Promise<Torrent> {
     const client = this.client;
     if (!client) return Promise.reject(new ServiceUnavailableException('Motor P2P indisponível.'));
 
@@ -292,6 +346,8 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
       const timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
+        metrics.lastError = 'METADATA_TIMEOUT';
+        this.logger.warn(`Torrent metadata timeout: hash=${infoHash}, trackers=${metrics.trackersCount}, peers=${metrics.peerCount}, elapsedMs=${Date.now() - metrics.createdAt}`);
         reject(new GatewayTimeoutException('Tempo esgotado aguardando os metadados do torrent.'));
         void client.remove(infoHash, { destroyStore: true }).catch(() => undefined);
       }, METADATA_TIMEOUT_MS);
@@ -305,33 +361,49 @@ export class TorrentPlaybackService implements OnModuleInit, OnModuleDestroy {
         if (settled) return;
         settled = true;
         clearTimeout(timeout);
-        this.logger.log(`Torrent ready: hash=${infoHash}, files=${readyTorrent.files.length}`);
+        metrics.readyAt = Date.now();
+        metrics.lastError = null;
+        this.logger.log(`Torrent ready: hash=${infoHash}, files=${readyTorrent.files.length}, peers=${readyTorrent.numPeers}, metadataMs=${metrics.metadataAt ? metrics.metadataAt - metrics.createdAt : Date.now() - metrics.createdAt}`);
         resolve(readyTorrent);
       });
 
       let lastProgressLogAt = 0;
       torrent.on('metadata', () => {
-        this.logger.log(`Torrent metadata received: hash=${infoHash}, files=${torrent.files.length}, trackers=${trackers.length}`);
+        metrics.metadataAt = Date.now();
+        this.logger.log(`Torrent metadata received: hash=${infoHash}, files=${torrent.files.length}, trackers=${trackers.length}, elapsedMs=${metrics.metadataAt - metrics.createdAt}`);
       });
-      torrent.on('wire', (wire) => {
-        this.logger.log(`Torrent peer connected: hash=${infoHash}, peers=${torrent.numPeers}`);
+      torrent.on('wire', () => {
+        metrics.peerCount = torrent.numPeers;
+        metrics.lastPeerAt = Date.now();
+        if (metrics.peerCount === 1 || metrics.peerCount % 5 === 0) {
+          this.logger.log(`Torrent peer connected: hash=${infoHash}, peers=${metrics.peerCount}, elapsedMs=${Date.now() - metrics.createdAt}`);
+        }
       });
       torrent.on('noPeers', (announceType) => {
-        this.logger.warn(`No torrent peers found: hash=${infoHash}, source=${announceType}, trackers=${trackers.length}`);
+        metrics.noPeersEvents += 1;
+        if (metrics.noPeersEvents === 1 || metrics.noPeersEvents % 10 === 0) {
+          this.logger.warn(`Torrent peer discovery empty: hash=${infoHash}, source=${announceType}, trackers=${trackers.length}, attempts=${metrics.noPeersEvents}, peers=${torrent.numPeers}`);
+        }
       });
       torrent.on('download', (bytes) => {
         const now = Date.now();
         if (now - lastProgressLogAt < 5_000) return;
         lastProgressLogAt = now;
-        this.logger.log(`Torrent downloading: hash=${infoHash}, peers=${torrent.numPeers}, downloaded=${torrent.downloaded}, lastChunk=${bytes}`);
+        metrics.peerCount = torrent.numPeers;
+        metrics.downloadedBytes = torrent.downloaded;
+        metrics.lastDownloadAt = now;
+        this.logger.log(`Torrent download progress: hash=${infoHash}, peers=${metrics.peerCount}, downloaded=${metrics.downloadedBytes}, lastChunk=${bytes}, elapsedMs=${now - metrics.createdAt}`);
       });
       torrent.on('warning', (error) => {
         const message = error instanceof Error ? error.message : String(error);
-        this.logger.warn(`Torrent warning for ${infoHash}: ${message}`);
+        metrics.trackerWarnings += 1;
+        metrics.lastError = message;
+        this.logger.warn(`Torrent warning: hash=${infoHash}, warningCount=${metrics.trackerWarnings}, peers=${metrics.peerCount}, trackers=${metrics.trackersCount}, message=${message}`);
       });
 
       torrent.on('error', (error) => {
         const message = error instanceof Error ? error.message : String(error);
+        metrics.lastError = message;
         if (!settled) {
           settled = true;
           clearTimeout(timeout);
