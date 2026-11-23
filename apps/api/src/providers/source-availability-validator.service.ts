@@ -71,6 +71,10 @@ export class SourceAvailabilityValidatorService {
           } catch (error) {
             const reason = error instanceof Error ? error.message : String(error);
             this.logger.debug(`Validação falhou para ${source.id}: ${reason}`);
+            output[index] = {
+              ...source,
+              availability: { status: 'unknown', checkedAt, reason: 'Falha temporária durante a validação.' },
+            };
           }
         }
       },
@@ -121,9 +125,14 @@ export class SourceAvailabilityValidatorService {
       }
 
       const contentType = response.headers.get('content-type') ?? undefined;
-      if (!response.ok) {
+      if ((response.status !== 200 && response.status !== 206) || !response.ok) {
         await response.body?.cancel().catch(() => undefined);
         return { status: 'unavailable', latencyMs: Date.now() - startedAt, contentType, reason: `Origem respondeu HTTP ${response.status}.` };
+      }
+
+      if (source.target.transport === 'http' && /^(?:text\/html|application\/json)(?:;|$)/i.test(contentType ?? '')) {
+        await response.body?.cancel().catch(() => undefined);
+        return { status: 'unavailable', latencyMs: Date.now() - startedAt, contentType, reason: 'A origem não retornou um recurso de mídia.' };
       }
 
       if (source.target.transport === 'hls') {
