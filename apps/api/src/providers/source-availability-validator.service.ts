@@ -25,6 +25,7 @@ const MAX_REDIRECTS = 3;
 const MAX_HLS_BYTES = 256 * 1024;
 const CACHE_TTL_MS = 30_000;
 const MAX_CONCURRENCY = 8;
+const MAX_SOURCES_TO_PROBE = 24;
 
 @Injectable()
 export class SourceAvailabilityValidatorService {
@@ -35,14 +36,25 @@ export class SourceAvailabilityValidatorService {
 
   async validate(sources: PlaybackSource[]): Promise<PlaybackSource[]> {
     const output = new Array<PlaybackSource>(sources.length);
+    const probeCount = Math.min(sources.length, MAX_SOURCES_TO_PROBE);
+    for (let index = probeCount; index < sources.length; index += 1) {
+      output[index] = {
+        ...sources[index],
+        availability: {
+          status: 'unknown',
+          checkedAt: new Date().toISOString(),
+          reason: 'Limite de validações por consulta atingido; verificação adiada.',
+        },
+      };
+    }
     let next = 0;
 
     await Promise.all(Array.from(
-      { length: Math.min(MAX_CONCURRENCY, sources.length) },
+      { length: Math.min(MAX_CONCURRENCY, probeCount) },
       async () => {
         while (true) {
           const index = next++;
-          if (index >= sources.length) return;
+          if (index >= probeCount) return;
           const source = sources[index];
           const checkedAt = new Date().toISOString();
 
