@@ -8,6 +8,8 @@ import { PlaybackSourceResolverService } from '../dist/providers/playback-source
 import { SourceDiscoveryService } from '../dist/providers/source-discovery.service.js';
 import { parseByteRange } from '../dist/providers/torrent-playback.service.js';
 
+const passthroughAvailability = { validate: async (sources) => sources };
+
 const movie = {
   id: 'tmdb:movie:10', kind: 'movie', tmdbId: 10, title: 'Example', imdbId: 'tt1234567',
 };
@@ -59,7 +61,7 @@ test('TtlCache compartilha uma única chamada concorrente', async () => {
 test('resolver exige temporada e episódio para séries', async () => {
   const registry = new ProviderRegistry();
   const catalog = { detail: async () => ({ title: 'Example', originalTitle: 'Example', imdbId: 'tt1234567' }) };
-  const resolver = new PlaybackSourceResolverService(catalog, new SourceDiscoveryService(registry));
+  const resolver = new PlaybackSourceResolverService(catalog, new SourceDiscoveryService(registry, passthroughAvailability));
   await assert.rejects(
     resolver.resolve('tmdb:series:10'),
     (error) => error.status === 400,
@@ -72,7 +74,7 @@ test('resolver prioriza a origem anterior para continuidade', async () => {
   registry.register({ id: 'addon-a', name: 'A', playerKind: 'native', isEnabled: () => true, findSources: async () => [source('a', 'addon-a')] });
   registry.register({ id: 'addon-b', name: 'B', playerKind: 'native', isEnabled: () => true, findSources: async () => [source('b', 'addon-b')] });
   const catalog = { detail: async () => ({ title: 'Example', originalTitle: 'Example', imdbId: 'tt1234567' }) };
-  const resolver = new PlaybackSourceResolverService(catalog, new SourceDiscoveryService(registry));
+  const resolver = new PlaybackSourceResolverService(catalog, new SourceDiscoveryService(registry, passthroughAvailability));
   const result = await resolver.resolve('tmdb:series:10', 1, 2, 'addon-b');
   assert.equal(result.sources[0].providerId, 'addon-b');
 });
@@ -92,7 +94,7 @@ test('SourceDiscovery deduplica destinos e descarta fontes malformadas', async (
       source('invalid', 'javascript:alert(1)'),
     ],
   });
-  const result = await new SourceDiscoveryService(registry).discover(movie);
+  const result = await new SourceDiscoveryService(registry, passthroughAvailability).discover(movie);
   assert.equal(result.sources.length, 1);
   assert.equal(result.sources[0].id, 'first');
   assert.equal(result.errors.length, 1);
@@ -111,7 +113,7 @@ test('SourceDiscovery preserva fontes parciais quando provider falha', async () 
       );
     },
   });
-  const result = await new SourceDiscoveryService(registry).discover(movie);
+  const result = await new SourceDiscoveryService(registry, passthroughAvailability).discover(movie);
   assert.equal(result.sources.length, 1);
   assert.deepEqual(result.errors, [{ provider: 'Broken addon', message: 'HTTP 503' }]);
 });
