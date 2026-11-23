@@ -16,6 +16,7 @@ interface ArchiveFile {
 }
 
 interface ArchiveMetadata {
+  metadata?: { licenseurl?: string };
   files?: ArchiveFile[];
 }
 
@@ -28,6 +29,24 @@ function isPlayableVideo(file: ArchiveFile): boolean {
   return /\.(mp4|m4v|webm|mov|mkv)$/i.test(name);
 }
 
+function readCreativeCommonsLicense(value: string | undefined): { status: 'public-domain' | 'creative-commons'; licenseUrl: string } | null {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== 'https:' || url.hostname !== 'creativecommons.org' || url.search || url.hash) return null;
+    const path = url.pathname.replace(/\/+$/, '');
+    if (/^\/publicdomain\/(?:mark|zero)\/1\.0$/.test(path)) {
+      return { status: 'public-domain', licenseUrl: url.toString() };
+    }
+    if (/^\/licenses\/(?:by|by-sa|by-nd|by-nc|by-nc-sa|by-nc-nd)\/\d(?:\.\d)?$/.test(path)) {
+      return { status: 'creative-commons', licenseUrl: url.toString() };
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 function archiveDownloadUrl(identifier: string, filename: string): string {
   const encodedPath = filename.split('/').map((part) => encodeURIComponent(part)).join('/');
   return `https://archive.org/download/${encodeURIComponent(identifier)}/${encodedPath}`;
@@ -38,7 +57,7 @@ export class InternetArchiveProvider implements PlaybackProvider {
   readonly id = 'internet-archive';
   readonly name = 'Internet Archive';
   readonly playerKind = 'native' as const;
-  readonly note = 'Busca arquivos de vídeo reproduzíveis no Internet Archive com correspondência exata de título.';
+  readonly note = 'Busca vídeos com título exato e licença Creative Commons ou domínio público identificada nos metadados.';
   private readonly cache = new TtlCache<PlaybackSource[]>(60 * 60 * 1000);
 
   constructor(private readonly config: ConfigService) {}
@@ -48,7 +67,6 @@ export class InternetArchiveProvider implements PlaybackProvider {
   }
 
   async findSources(ref: MediaRef): Promise<PlaybackSource[]> {
-    // Ainda não há uma relação confiável de série/temporada/episódio neste provider.
     if (ref.kind !== 'movie') return [];
     const titles = [...new Set([ref.title, ref.originalTitle].filter((value): value is string => Boolean(value)))];
     const key = `${titles.map(normalizeTitle).join('|')}|${ref.year ?? ''}`;
@@ -86,6 +104,8 @@ export class InternetArchiveProvider implements PlaybackProvider {
       });
       if (!metadataResponse.ok) return null;
       const metadata = await metadataResponse.json() as ArchiveMetadata;
+      const authorization = readCreativeCommonsLicense(metadata.metadata?.licenseurl);
+      if (!authorization) return null;
       const file = (metadata.files ?? [])
         .filter(isPlayableVideo)
         .sort((a, b) => Number(/\.mp4$/i.test(b.name ?? '')) - Number(/\.mp4$/i.test(a.name ?? '')))[0];
@@ -97,6 +117,7 @@ export class InternetArchiveProvider implements PlaybackProvider {
         providerId: this.id,
         label: `${doc.title}${doc.year ? ` (${doc.year})` : ''} · ${file.format ?? file.name.split('.').pop()?.toUpperCase() ?? 'Vídeo'}`,
         target: { kind: 'native', transport: 'http', url: archiveDownloadUrl(doc.identifier, file.name) },
+        authorization,
       };
     }));
 

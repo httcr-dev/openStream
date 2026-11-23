@@ -18,6 +18,11 @@ export type PlaybackTarget =
   | { kind: 'embed'; provider: string; embedUrl: string }
   | { kind: 'torrent'; infoHash: string; fileIdx?: number; trackers?: string[]; externalUrl?: string };
 
+export interface SourceAuthorization {
+  status: 'public-domain' | 'creative-commons' | 'licensed' | 'user-owned';
+  licenseUrl?: string;
+}
+
 export interface PlaybackSource {
   id: string;
   provider: string;
@@ -26,6 +31,8 @@ export interface PlaybackSource {
   target: PlaybackTarget;
   /** ID do addon/provider que encontrou a fonte, usado para continuidade. */
   providerId?: string;
+  /** Evidência de autorização declarada pela fonte; não é uma auditoria jurídica. */
+  authorization?: SourceAuthorization;
 }
 
 export interface ProviderSearchFailure {
