@@ -241,6 +241,21 @@ test('Internet Archive só retorna filme com título exato, arquivo de vídeo e 
   }
 });
 
+test('Internet Archive descarta arquivos sem licença aberta identificável', async () => {
+  const { InternetArchiveProvider } = await import('../dist/providers/internet-archive/internet-archive.provider.js');
+  const provider = new InternetArchiveProvider({ get: () => 'true' });
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => String(url).includes('advancedsearch.php')
+    ? new Response(JSON.stringify({ response: { docs: [{ identifier: 'unlicensed', title: 'Example', year: 2020 }] } }), { status: 200 })
+    : new Response(JSON.stringify({ metadata: { rights: 'All rights reserved' }, files: [{ name: 'feature.mp4' }] }), { status: 200 });
+  try {
+    const sources = await provider.findSources({ ...movie, year: 2020 });
+    assert.deepEqual(sources, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test('Internet Archive não oferece itens de série como se fossem episódios', async () => {
   const { InternetArchiveProvider } = await import('../dist/providers/internet-archive/internet-archive.provider.js');
   const provider = new InternetArchiveProvider({ get: () => 'true' });
