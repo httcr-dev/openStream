@@ -85,8 +85,11 @@ export class SourceAvailabilityValidatorService {
 
   private async probe(source: PlaybackSource): Promise<ProbeResult> {
     const startedAt = Date.now();
-    const initialUrl = source.target.kind === 'native' ? source.target.url : '';
-    let currentUrl = initialUrl;
+    const target = source.target;
+    if (target.kind !== 'native') {
+      return { status: 'unknown', reason: 'Tipo de origem não sondável.' };
+    }
+    let currentUrl = target.url;
 
     for (let redirect = 0; redirect <= MAX_REDIRECTS; redirect += 1) {
       if (!await this.safety.isSafe(currentUrl)) {
@@ -97,7 +100,7 @@ export class SourceAvailabilityValidatorService {
       try {
         response = await fetch(currentUrl, {
           method: 'GET',
-          headers: source.target.transport === 'hls'
+          headers: target.transport === 'hls'
             ? { Accept: 'application/vnd.apple.mpegurl, application/x-mpegURL, */*' }
             : { Range: 'bytes=0-0', Accept: '*/*' },
           redirect: 'manual',
@@ -130,12 +133,12 @@ export class SourceAvailabilityValidatorService {
         return { status: 'unavailable', latencyMs: Date.now() - startedAt, contentType, reason: `Origem respondeu HTTP ${response.status}.` };
       }
 
-      if (source.target.transport === 'http' && /^(?:text\/html|application\/json)(?:;|$)/i.test(contentType ?? '')) {
+      if (target.transport === 'http' && /^(?:text\/html|application\/json)(?:;|$)/i.test(contentType ?? '')) {
         await response.body?.cancel().catch(() => undefined);
         return { status: 'unavailable', latencyMs: Date.now() - startedAt, contentType, reason: 'A origem não retornou um recurso de mídia.' };
       }
 
-      if (source.target.transport === 'hls') {
+      if (target.transport === 'hls') {
         const playlist = await this.readLimitedText(response, MAX_HLS_BYTES);
         if (!playlist || !/^\s*#EXTM3U(?:\s|$)/m.test(playlist) ||
             !(/#EXTINF:/m.test(playlist) || /#EXT-X-STREAM-INF:/m.test(playlist))) {
