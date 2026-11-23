@@ -72,7 +72,7 @@ test('resolver prioriza a origem anterior para continuidade', async () => {
   registry.register({ id: 'addon-a', name: 'A', playerKind: 'native', isEnabled: () => true, findSources: async () => [source('a', 'addon-a')] });
   registry.register({ id: 'addon-b', name: 'B', playerKind: 'native', isEnabled: () => true, findSources: async () => [source('b', 'addon-b')] });
   const catalog = { detail: async () => ({ title: 'Example', originalTitle: 'Example', imdbId: 'tt1234567' }) };
-  const resolver = new PlaybackSourceResolverService(catalog, registry);
+  const resolver = new PlaybackSourceResolverService(catalog, new SourceDiscoveryService(registry));
   const result = await resolver.resolve('tmdb:series:10', 1, 2, 'addon-b');
   assert.equal(result.sources[0].providerId, 'addon-b');
 });
@@ -224,7 +224,7 @@ test('Internet Archive só retorna filme com título exato, arquivo de vídeo e 
         { identifier: 'example-movie', title: 'Example Movie', year: 2020 },
       ] } }), { status: 200 });
     }
-    return new Response(JSON.stringify({ files: [
+    return new Response(JSON.stringify({ metadata: { licenseurl: 'https://creativecommons.org/licenses/by/4.0/' }, files: [
       { name: 'poster.jpg', format: 'JPEG' },
       { name: 'feature.mp4', format: 'MPEG4', size: '1000' },
     ] }), { status: 200 });
