@@ -85,6 +85,7 @@ test('StremioAddonProvider consulta exatamente o episódio solicitado', async ()
   };
   const health = [];
   const registry = {
+    waitUntilReady: async () => {},
     enabled: () => [addon],
     recordRequest: (...args) => health.push(args),
     getHealth: () => ({ score: 1 }),
@@ -117,7 +118,7 @@ test('StremioAddonProvider preserva trackers junto do candidato torrent', async 
     manifestUrl: 'https://addon.example/manifest.json', baseUrl: 'https://addon.example',
     manifest: { id: 'addon.example', version: '1.0.0', name: 'Example Addon', resources: ['stream'], types: ['movie'] }, status: 'ready',
   };
-  const registry = { enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
+  const registry = { waitUntilReady: async () => {}, enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ streams: [{
@@ -144,7 +145,7 @@ test('StremioAddonProvider mantém resultados válidos quando outro addon falha 
     manifestUrl: 'https://bad.example/manifest.json', baseUrl: 'https://bad.example',
     manifest: { id: 'bad', version: '1.0.0', name: 'Bad', resources: ['stream'] }, status: 'ready',
   };
-  const registry = { enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
+  const registry = { waitUntilReady: async () => {}, enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
   let badRequests = 0;
