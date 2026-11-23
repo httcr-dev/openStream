@@ -5,6 +5,7 @@ import { TtlCache } from '../dist/providers/ttl-cache.js';
 import { stremioContentId } from '../dist/providers/stremio-addons/stremio-addon.provider.js';
 import { AddonRegistryService, collectManifestUrls, isSafeAddonUrl, normalizeBaseUrl } from '../dist/providers/stremio-addons/addon-registry.service.js';
 import { PlaybackSourceResolverService } from '../dist/providers/playback-source-resolver.service.js';
+import { SourceDiscoveryService } from '../dist/providers/source-discovery.service.js';
 import { parseByteRange } from '../dist/providers/torrent-playback.service.js';
 
 const movie = {
@@ -58,7 +59,7 @@ test('TtlCache compartilha uma única chamada concorrente', async () => {
 test('resolver exige temporada e episódio para séries', async () => {
   const registry = new ProviderRegistry();
   const catalog = { detail: async () => ({ title: 'Example', originalTitle: 'Example', imdbId: 'tt1234567' }) };
-  const resolver = new PlaybackSourceResolverService(catalog, registry);
+  const resolver = new PlaybackSourceResolverService(catalog, new SourceDiscoveryService(registry));
   await assert.rejects(
     resolver.resolve('tmdb:series:10'),
     (error) => error.status === 400,
@@ -74,6 +75,45 @@ test('resolver prioriza a origem anterior para continuidade', async () => {
   const resolver = new PlaybackSourceResolverService(catalog, registry);
   const result = await resolver.resolve('tmdb:series:10', 1, 2, 'addon-b');
   assert.equal(result.sources[0].providerId, 'addon-b');
+});
+
+
+test('SourceDiscovery deduplica destinos e descarta fontes malformadas', async () => {
+  const registry = new ProviderRegistry();
+  const source = (id, url) => ({
+    id, provider: id, providerId: id, label: id,
+    target: { kind: 'native', transport: 'http', url },
+  });
+  registry.register({
+    id: 'provider-a', name: 'A', playerKind: 'native', isEnabled: () => true,
+    findSources: async () => [
+      source('first', 'https://cdn.example/video.mp4'),
+      source('duplicate', 'https://cdn.example/video.mp4'),
+      source('invalid', 'javascript:alert(1)'),
+    ],
+  });
+  const result = await new SourceDiscoveryService(registry).discover(movie);
+  assert.equal(result.sources.length, 1);
+  assert.equal(result.sources[0].id, 'first');
+  assert.equal(result.errors.length, 1);
+  assert.match(result.errors[0].message, /inválido/);
+});
+
+test('SourceDiscovery preserva fontes parciais quando provider falha', async () => {
+  const registry = new ProviderRegistry();
+  registry.register({
+    id: 'partial', name: 'Partial', playerKind: 'native', isEnabled: () => true,
+    findSources: async () => {
+      throw new (await import('../dist/providers/provider.types.js')).ProviderSearchError(
+        'partial failure',
+        [{ id: 'ok', provider: 'Partial', label: 'OK', target: { kind: 'native', transport: 'http', url: 'https://cdn.example/ok.mp4' } }],
+        [{ provider: 'Broken addon', message: 'HTTP 503' }],
+      );
+    },
+  });
+  const result = await new SourceDiscoveryService(registry).discover(movie);
+  assert.equal(result.sources.length, 1);
+  assert.deepEqual(result.errors, [{ provider: 'Broken addon', message: 'HTTP 503' }]);
 });
 
 test('StremioAddonProvider consulta exatamente o episódio solicitado', async () => {
@@ -171,7 +211,7 @@ test('StremioAddonProvider mantém resultados válidos quando outro addon falha 
   }
 });
 
-test('Internet Archive só retorna filme com título exato e arquivo de vídeo real', async () => {
+test('Internet Archive só retorna filme com título exato, arquivo de vídeo e licença aberta explícita', async () => {
   const { InternetArchiveProvider } = await import('../dist/providers/internet-archive/internet-archive.provider.js');
   const provider = new InternetArchiveProvider({ get: () => 'true' });
   const originalFetch = globalThis.fetch;
@@ -194,6 +234,7 @@ test('Internet Archive só retorna filme com título exato e arquivo de vídeo r
     assert.equal(sources.length, 1);
     assert.equal(sources[0].target.kind, 'native');
     assert.equal(sources[0].target.url, 'https://archive.org/download/example-movie/feature.mp4');
+    assert.deepEqual(sources[0].authorization, { status: 'creative-commons', licenseUrl: 'https://creativecommons.org/licenses/by/4.0/' });
     assert.equal(requests.filter((url) => url.includes('/metadata/')).length, 1);
   } finally {
     globalThis.fetch = originalFetch;
