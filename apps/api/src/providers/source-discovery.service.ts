@@ -92,7 +92,7 @@ export class SourceDiscoveryService {
     }
 
     if (source.target.kind === 'torrent') {
-      return /^(?:[a-f\\d]{40}|[a-z2-7]{32})$/i.test(source.target.infoHash) &&
+      return /^(?:[a-f\d]{40}|[a-z2-7]{32})$/i.test(source.target.infoHash) &&
         (source.target.fileIdx === undefined ||
           (Number.isInteger(source.target.fileIdx) && source.target.fileIdx >= 0));
     }
