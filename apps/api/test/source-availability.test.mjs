@@ -99,3 +99,19 @@ test('validator compartilha probes concorrentes e reutiliza cache curto', async 
     assert.equal(fetchCalls, 1);
   });
 });
+
+test('validator limita probes por consulta e preserva fontes adiadas como unknown', async () => {
+  let fetchCalls = 0;
+  await withFetch(async () => {
+    fetchCalls += 1;
+    return new Response('x', { status: 206 });
+  }, async () => {
+    const validator = new SourceAvailabilityValidatorService({ isSafe: async () => true });
+    const result = await validator.validate(Array.from({ length: 25 }, (_, index) =>
+      native(`bounded-${index}`, 'http', `https://media.example/${index}.mp4`),
+    ));
+    assert.equal(fetchCalls, 24);
+    assert.equal(result.length, 25);
+    assert.equal(result[24].availability.status, 'unknown');
+  });
+});
