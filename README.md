@@ -28,7 +28,7 @@ PostgreSQL é opcional e pode ser iniciado com `pnpm infra:up`. O backend funcio
 
 ## Addons Stremio
 
-Configure uma lista de URLs de manifests em `STREMIO_ADDON_URLS`, separadas por vírgula. O OpenStream carrega os manifests ao iniciar, identifica addons com recurso `stream` e consulta automaticamente os que declaram compatibilidade com o tipo e identificador do conteúdo.
+A API descobre automaticamente addons públicos pelo diretório independente `addons-stremio.com` (API de catálogo para clientes de descoberta), percorre até duas páginas de listagens e valida os manifests encontrados. O carregamento acontece em segundo plano para não bloquear a inicialização da API; a primeira busca por fontes aguarda a conclusão da descoberta. São mantidas apenas URLs HTTP(S) públicas, rejeitando destinos locais/privados para reduzir risco de SSRF. A lista manual `STREMIO_ADDON_URLS` continua disponível para addons configuráveis, privados ou ausentes no diretório, e prevalece quando o mesmo addon aparece nas duas fontes. A descoberta pode ser desativada com `STREMIO_ADDON_DISCOVERY_ENABLED=false` e o diretório pode ser substituído por `STREMIO_ADDON_DIRECTORY_URL`.
 
 Para séries, a consulta usa o IMDb ID e o identificador de episódio no formato `tt...:temporada:episódio`. Isso faz com que o addon receba o episódio específico, em vez de uma busca textual genérica pelo nome da série.
 
@@ -36,7 +36,7 @@ São aceitos streams HTTP(S) diretos, IDs de vídeo do YouTube para embed oficia
 
 Para Comet/ElfHosted, use a URL de manifest gerada pela página `/configure`. O manifest público sem configuração pode responder HTTP 403 no endpoint de streams. Addons que retornam 403 ficam em cooldown por 15 minutos para evitar chamadas e logs repetitivos; os demais addons continuam sendo consultados.
 
-A lista de manifests é configurada uma única vez no servidor, não por usuário. A descoberta automática seleciona todos os addons compatíveis dessa lista. O ranking adaptativo considera taxa de resposta e latência observadas; ainda não há integração com um diretório global para importar popularidade.
+A descoberta consulta até 200 listagens por popularidade e registra addons que declaram o recurso `stream`; na hora da busca, respeita apenas compatibilidade técnica declarada para filme/série e prefixo do identificador. Não há filtros manuais por qualidade ou categoria. O ranking adaptativo considera taxa de resposta e latência observadas.
 
 ## Reprodução P2P
 
@@ -86,5 +86,5 @@ O comando compila a API e executa os testes unitários com o test runner nativo 
 - O resolver exige temporada e episódio ao pesquisar uma série.
 - A continuidade prioriza o mesmo addon/provider ao consultar o próximo episódio.
 - A página de reprodução oferece navegação para episódio anterior e próximo, inclusive entre temporadas.
-- A seleção de addons é automática entre os manifests configurados; a descoberta global/popularidade do diretório será uma etapa posterior.
+- A descoberta global de addons é automática, com configuração manual opcional para instâncias personalizadas.
 - A verificação de direitos/autorização foi deliberadamente adiada para uma fase posterior, conforme a prioridade atual de validar o funcionamento local.

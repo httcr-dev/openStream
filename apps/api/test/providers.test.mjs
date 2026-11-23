@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { ProviderRegistry } from '../dist/providers/provider.registry.js';
 import { TtlCache } from '../dist/providers/ttl-cache.js';
 import { stremioContentId } from '../dist/providers/stremio-addons/stremio-addon.provider.js';
-import { normalizeBaseUrl } from '../dist/providers/stremio-addons/addon-registry.service.js';
+import { AddonRegistryService, collectManifestUrls, isSafeAddonUrl, normalizeBaseUrl } from '../dist/providers/stremio-addons/addon-registry.service.js';
 import { PlaybackSourceResolverService } from '../dist/providers/playback-source-resolver.service.js';
 import { parseByteRange } from '../dist/providers/torrent-playback.service.js';
 
@@ -85,6 +85,7 @@ test('StremioAddonProvider consulta exatamente o episódio solicitado', async ()
   };
   const health = [];
   const registry = {
+    waitUntilReady: async () => {},
     enabled: () => [addon],
     recordRequest: (...args) => health.push(args),
     getHealth: () => ({ score: 1 }),
@@ -117,7 +118,7 @@ test('StremioAddonProvider preserva trackers junto do candidato torrent', async 
     manifestUrl: 'https://addon.example/manifest.json', baseUrl: 'https://addon.example',
     manifest: { id: 'addon.example', version: '1.0.0', name: 'Example Addon', resources: ['stream'], types: ['movie'] }, status: 'ready',
   };
-  const registry = { enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
+  const registry = { waitUntilReady: async () => {}, enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ streams: [{
@@ -144,7 +145,7 @@ test('StremioAddonProvider mantém resultados válidos quando outro addon falha 
     manifestUrl: 'https://bad.example/manifest.json', baseUrl: 'https://bad.example',
     manifest: { id: 'bad', version: '1.0.0', name: 'Bad', resources: ['stream'] }, status: 'ready',
   };
-  const registry = { enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
+  const registry = { waitUntilReady: async () => {}, enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
   const originalFetch = globalThis.fetch;
   let badRequests = 0;
@@ -207,6 +208,50 @@ test('Internet Archive não oferece itens de série como se fossem episódios', 
   try {
     const sources = await provider.findSources({ ...movie, kind: 'series', season: 1, episode: 2 });
     assert.deepEqual(sources, []);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+
+test('descoberta coleta manifests diretos e instâncias do diretório', () => {
+  assert.deepEqual(
+    collectManifestUrls([
+      { manifestUrl: 'https://one.example/manifest.json' },
+      { manifest_url: 'https://two.example' },
+      { instances: [{ transportUrl: 'https://three.example/addon' }] },
+    ]),
+    [
+      'https://one.example/manifest.json',
+      'https://two.example/manifest.json',
+      'https://three.example/addon/manifest.json',
+    ],
+  );
+});
+
+test('descoberta rejeita destinos locais para evitar SSRF', async () => {
+  assert.equal(await isSafeAddonUrl('http://127.0.0.1/manifest.json'), false);
+  assert.equal(await isSafeAddonUrl('http://192.168.1.10/manifest.json'), false);
+  assert.equal(await isSafeAddonUrl('http://localhost/manifest.json'), false);
+  assert.equal(await isSafeAddonUrl('file:///etc/passwd'), false);
+});
+
+test('AddonRegistryService mantém configuração manual quando descoberta está desativada', async () => {
+  const config = {
+    get: (key) => ({
+      STREMIO_ADDON_DISCOVERY_ENABLED: 'false',
+      STREMIO_ADDON_URLS: 'http://127.0.0.1:9999/manifest.json',
+    })[key],
+  };
+  const registry = new AddonRegistryService(config);
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    id: 'manual.addon', version: '1.0.0', name: 'Manual Addon', resources: ['stream'], types: ['movie'],
+  }), { status: 200 });
+  try {
+    const addons = await registry.refresh();
+    assert.equal(addons.length, 1);
+    assert.equal(registry.enabled()[0].manifest.id, 'manual.addon');
   } finally {
     globalThis.fetch = originalFetch;
   }
