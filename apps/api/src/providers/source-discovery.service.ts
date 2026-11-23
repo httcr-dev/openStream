@@ -18,7 +18,7 @@ export class SourceDiscoveryService {
     const providers = this.registry.enabled();
     const settled = await Promise.allSettled(
       providers.map((provider) => this.withTimeout(
-        provider.findSources(ref),
+        Promise.resolve().then(() => provider.findSources(ref)),
         provider.id === 'stremio-addons' ? 60_000 : 10_000,
       )),
     );
