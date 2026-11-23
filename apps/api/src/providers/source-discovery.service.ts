@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProviderRegistry } from './provider.registry.js';
 import { ProviderSearchError } from './provider.types.js';
+import { SourceAvailabilityValidatorService } from './source-availability-validator.service.js';
 import type { MediaRef, PlaybackSource, ProviderSearchFailure } from './provider.types.js';
 
 export interface SourceDiscoveryResult {
@@ -12,7 +13,10 @@ export interface SourceDiscoveryResult {
 export class SourceDiscoveryService {
   private readonly logger = new Logger(SourceDiscoveryService.name);
 
-  constructor(private readonly registry: ProviderRegistry) {}
+  constructor(
+    private readonly registry: ProviderRegistry,
+    private readonly availability: SourceAvailabilityValidatorService,
+  ) {}
 
   async discover(ref: MediaRef, preferredProviderId?: string): Promise<SourceDiscoveryResult> {
     const providers = this.registry.enabled();
@@ -63,7 +67,9 @@ export class SourceDiscoveryService {
       return Number(b.target.kind !== 'embed') - Number(a.target.kind !== 'embed');
     });
 
-    return { sources: this.deduplicate(validSources), errors };
+    const deduplicated = this.deduplicate(validSources);
+    const available = await this.availability.validate(deduplicated);
+    return { sources: available, errors };
   }
 
   private isValidSource(source: PlaybackSource): boolean {

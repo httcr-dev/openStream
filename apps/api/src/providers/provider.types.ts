@@ -33,6 +33,14 @@ export interface PlaybackSource {
   providerId?: string;
   /** Evidência de autorização declarada pela fonte; não é uma auditoria jurídica. */
   authorization?: SourceAuthorization;
+  /** Resultado da última verificação superficial da origem. */
+  availability?: {
+    status: 'available' | 'unavailable' | 'unknown';
+    checkedAt: string;
+    latencyMs?: number;
+    contentType?: string;
+    reason?: string;
+  };
 }
 
 export interface ProviderSearchFailure {
