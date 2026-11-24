@@ -9,6 +9,7 @@ export interface PlaybackFailoverInput {
   provider?: string;
   failedSourceIds: string[];
   failedSourceId: string;
+  failedSourceProvider?: string;
   reason: string;
 }
 
@@ -44,7 +45,7 @@ export class PlaybackRuntimeService {
     }
 
     const failedIds = [...new Set([...input.failedSourceIds, input.failedSourceId])];
-    this.recordFailure(input.failedSourceId, input.reason);
+    this.recordFailure(input.failedSourceId, input.failedSourceProvider ?? 'unknown', input.reason);
 
     const result = await this.resolver.resolve(
       input.id,
@@ -84,12 +85,12 @@ export class PlaybackRuntimeService {
     };
   }
 
-  private recordFailure(sourceId: string, reason: string) {
+  private recordFailure(sourceId: string, provider: string, reason: string) {
     this.pruneMetrics();
     const existing = this.failures.get(sourceId);
     const metric: FailureMetric = {
       sourceId,
-      provider: sourceId.split(':', 1)[0] || 'unknown',
+      provider,
       failures: (existing?.failures ?? 0) + 1,
       lastReason: reason.slice(0, 500),
       lastFailedAt: new Date().toISOString(),
