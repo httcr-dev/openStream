@@ -32,6 +32,7 @@ test('somente addons explicitamente allowlisted são admitidos', () => {
 });
 
 test('cooldown aumenta para rate limit e falhas temporárias, e é nulo para erros permanentes', () => {
+  assert.equal(cooldownForStatus(400), 60_000);
   assert.equal(cooldownForStatus(404), 60 * 60_000);
   assert.equal(cooldownForStatus(403), 15 * 60_000);
   assert.equal(cooldownForStatus(429), 10 * 60_000);
