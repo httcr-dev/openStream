@@ -46,6 +46,13 @@ export interface ResolveResult {
   errors: { provider: string; message: string }[];
 }
 
+export interface FailoverResult {
+  media: ResolveResult['media'];
+  nextSource: PlaybackSource | null;
+  sources: PlaybackSource[];
+  exhausted: boolean;
+}
+
 export interface ProviderDescriptor {
   id: string;
   name: string;
@@ -56,6 +63,23 @@ export interface ProviderDescriptor {
 
 async function get<T>(path: string): Promise<T> {
   const res = await fetch(`${API_URL}${path}`, { cache: 'no-store' });
+  if (!res.ok) {
+    let message = `Erro ${res.status}`;
+    try {
+      message = ((await res.json()) as { message?: string }).message ?? message;
+    } catch {}
+    throw new Error(message);
+  }
+  return (await res.json()) as T;
+}
+
+async function post<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    cache: 'no-store',
+  });
   if (!res.ok) {
     let message = `Erro ${res.status}`;
     try {
@@ -86,6 +110,16 @@ export const api = {
     if (provider) qs.set('provider', provider);
     return get<ResolveResult>(`/playback/sources?${qs}`);
   },
+  failover: (input: {
+    id: string;
+    season?: number;
+    episode?: number;
+    provider?: string;
+    failedSourceIds: string[];
+    failedSourceId: string;
+    failedSourceProvider?: string;
+    reason: string;
+  }) => post<FailoverResult>('/playback/failover', input),
   addons: () => get<{ id: string; name: string; description?: string; status: 'ready' | 'error'; error?: string; resources: unknown[]; health?: { requests: number; successRate: number | null; averageLatencyMs: number | null; score: number } }[]>('/addons'),
   providers: () => get<ProviderDescriptor[]>('/providers'),
 };

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { Suspense, useEffect, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 import { Player } from '@/components/player';
 import { api, type CatalogDetail, type Episode, type PlaybackSource } from '@/lib/api';
 
@@ -21,6 +21,10 @@ function Watch() {
   const [providerErrors, setProviderErrors] = useState<{ provider: string; message: string }[]>([]);
   const [current, setCurrent] = useState<string | null>(sourceId);
   const [error, setError] = useState<string | null>(null);
+  const [playbackStatus, setPlaybackStatus] = useState<string | null>(null);
+  const [failoverLoading, setFailoverLoading] = useState(false);
+  const [failedSourceIds, setFailedSourceIds] = useState<string[]>([]);
+  const failoverLock = useRef(false);
   const [loading, setLoading] = useState(true);
   const [previousEpisode, setPreviousEpisode] = useState<EpisodeLink | null>(null);
   const [nextEpisode, setNextEpisode] = useState<EpisodeLink | null>(null);
@@ -28,6 +32,10 @@ function Watch() {
   useEffect(() => {
     if (!id) return;
     setLoading(true);
+    setError(null);
+    setPlaybackStatus(null);
+    setFailedSourceIds([]);
+    failoverLock.current = false;
     api.sources(id, season, episode, preferredProvider)
       .then((result) => {
         setTitle(result.media.title);
@@ -106,17 +114,61 @@ function Watch() {
     return `/watch?${params.toString()}`;
   };
 
+  async function handlePlaybackError(reason: string) {
+    if (!id || !active || failoverLock.current || failedSourceIds.includes(active.id)) return;
+    failoverLock.current = true;
+    const attempted = [...failedSourceIds, active.id];
+    setFailedSourceIds(attempted);
+    setFailoverLoading(true);
+    setPlaybackStatus('Falha na reprodução. Procurando outra fonte…');
+
+    try {
+      const result = await api.failover({
+        id,
+        season,
+        episode,
+        provider: preferredProvider,
+        failedSourceIds: attempted,
+        failedSourceId: active.id,
+        failedSourceProvider: active.provider,
+        reason,
+      });
+      setSources((currentSources) => {
+        const known = new Set(currentSources.map((source) => source.id));
+        return [...currentSources, ...result.sources.filter((source) => !known.has(source.id))];
+      });
+      if (result.nextSource) {
+        setCurrent(result.nextSource.id);
+        setPlaybackStatus(`Fonte alternativa: ${result.nextSource.provider} · ${result.nextSource.label}`);
+        failoverLock.current = false;
+      } else {
+        setPlaybackStatus('Esta fonte falhou e não há outras fontes disponíveis para este conteúdo.');
+      }
+    } catch (e) {
+      setPlaybackStatus(`Não foi possível buscar outra fonte: ${e instanceof Error ? e.message : 'erro desconhecido'}`);
+      failoverLock.current = false;
+    } finally {
+      setFailoverLoading(false);
+    }
+  }
+
   return (
     <>
       <p><Link href={back} className="muted">← {title}{season && episode ? ` · T${season}E${episode}` : ''}</Link></p>
-      {active ? <Player source={active} /> : <p className="muted">Nenhuma fonte encontrada para este conteúdo.</p>}
+      {active
+        ? <Player key={active.id} source={active} onPlaybackError={(reason) => void handlePlaybackError(reason)} />
+        : <p className="muted">Nenhuma fonte encontrada para este conteúdo.</p>}
+      {playbackStatus && <p className={failoverLoading ? 'muted' : 'err'} role="status">{playbackStatus}</p>}
       {active && <>
         <div className="sourcebar">
           {sources.map((source) => (
-            <button key={source.id} className={source.id === active.id ? '' : 'secondary'} onClick={() => setCurrent(source.id)}>
+            <button key={source.id} className={source.id === active.id ? '' : 'secondary'}
+              disabled={failoverLoading || failedSourceIds.includes(source.id)}
+              onClick={() => { setCurrent(source.id); setPlaybackStatus(null); }}>
               {source.provider} · {source.target.kind === 'native'
                 ? (source.quality ?? 'player próprio')
                 : source.target.kind === 'torrent' ? 'torrent' : 'embed'}
+              {failedSourceIds.includes(source.id) ? ' · falhou' : ''}
             </button>
           ))}
         </div>
