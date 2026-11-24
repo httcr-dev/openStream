@@ -153,6 +153,7 @@ export class StremioAddonProvider implements PlaybackProvider {
             if (stream.ytId && /^[\w-]{11}$/.test(stream.ytId)) {
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
+                ...(hasRelease ? { release, quality: release.quality } : {}),
                 target: {
                   kind: 'embed' as const,
                   provider: 'youtube',
