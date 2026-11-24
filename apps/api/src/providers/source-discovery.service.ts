@@ -30,18 +30,21 @@ export class SourceDiscoveryService {
     );
 
     const sources: PlaybackSource[] = [];
+    const strictAdmissionIds = new Set<string>();
     const errors: ProviderSearchFailure[] = [];
 
     settled.forEach((result, index) => {
       const provider = providers[index];
       if (result.status === 'fulfilled') {
         sources.push(...result.value);
+        if (provider.id === 'stremio-addons') result.value.forEach((source) => strictAdmissionIds.add(source.id));
         return;
       }
 
       const reason = result.reason;
       if (reason instanceof ProviderSearchError) {
         sources.push(...reason.sources);
+        if (provider.id === 'stremio-addons') reason.sources.forEach((source) => strictAdmissionIds.add(source.id));
         errors.push(...reason.failures);
         return;
       }
@@ -72,7 +75,9 @@ export class SourceDiscoveryService {
     const deduplicated = this.deduplicate(validSources);
     const available = await this.availability.validate(deduplicated);
     const admitted = available.filter((source) => {
-      if (isPlaybackCandidate(source)) return true;
+      // Strict authorization/health admission applies to third-party Stremio addons,
+      // not to first-party providers (e.g. Jellyfin or Internet Archive).
+      if (!strictAdmissionIds.has(source.id) || isPlaybackCandidate(source)) return true;
       errors.push({
         provider: source.providerId ?? source.provider,
         message: `Fonte ocultada: exige autorização declarada e disponibilidade nativa confirmada (${source.availability?.status ?? 'unknown'}).`,
