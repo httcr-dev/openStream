@@ -67,7 +67,9 @@ YouTube Search e PeerTube Search foram retirados do registro automático porque 
 | GET | `/api/v1/catalog/movie/:id` | Detalhes do filme |
 | GET | `/api/v1/catalog/series/:id` | Detalhes da série e temporadas |
 | GET | `/api/v1/catalog/series/:id/seasons/:season` | Episódios da temporada |
-| GET | `/api/v1/playback/sources?id=tmdb:series:123&season=1&episode=2` | Fontes para episódio específico |\n| POST | `/api/v1/playback/failover` | Registra falha e retorna próxima fonte ainda não tentada |\n| GET | `/api/v1/playback/runtime/stats` | Métricas agregadas de falhas e failovers em runtime |
+| GET | `/api/v1/playback/sources?id=tmdb:series:123&season=1&episode=2` | Fontes para episódio específico |
+| POST | `/api/v1/playback/failover` | Registra falha e retorna próxima fonte ainda não tentada |
+| GET | `/api/v1/playback/runtime/stats` | Métricas agregadas de falhas e failovers em runtime |
 | GET | `/api/v1/playback/torrents/:infoHash/:fileIdx/stream` | Stream HTTP de um arquivo torrent |
 | GET | `/api/v1/providers` | Providers ativos |
 | GET | `/api/v1/addons` | Addons carregados e estado dos manifests |
@@ -85,6 +87,9 @@ O comando compila a API e executa os testes unitários com o test runner nativo 
 - O backend não depende de servidor de mídia local.
 - O resolver exige temporada e episódio ao pesquisar uma série.
 - A continuidade prioriza o mesmo addon/provider ao consultar o próximo episódio.
-- A página de reprodução oferece navegação para episódio anterior e próximo, inclusive entre temporadas.\n- Falhas de reprodução HTTP/HLS/torrent no player disparam busca automática por outra fonte; fontes já tentadas não são repetidas na mesma sessão.\n- Métricas de falha/failover ficam em memória por até uma hora e são limitadas às 500 fontes mais recentes; reiniciar a API zera esses dados.\n- Falhas internas de iframes/embed não podem ser detectadas de forma confiável pelo navegador por causa do isolamento entre origens; nesses casos, a troca manual de fonte continua disponível.
+- A página de reprodução oferece navegação para episódio anterior e próximo, inclusive entre temporadas.
+- Falhas de reprodução HTTP/HLS/torrent no player disparam busca automática por outra fonte; fontes já tentadas não são repetidas na mesma sessão.
+- Métricas de falha/failover ficam em memória por até uma hora e são limitadas às 500 fontes mais recentes; reiniciar a API zera esses dados.
+- Falhas internas de iframes/embed não podem ser detectadas de forma confiável pelo navegador por causa do isolamento entre origens; nesses casos, a troca manual de fonte continua disponível.
 - A descoberta global de addons é automática, com configuração manual opcional para instâncias personalizadas.
 - A verificação de direitos/autorização foi deliberadamente adiada para uma fase posterior, conforme a prioridade atual de validar o funcionamento local.
