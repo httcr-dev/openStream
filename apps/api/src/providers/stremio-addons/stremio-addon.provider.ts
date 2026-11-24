@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import type { MediaRef, PlaybackProvider, PlaybackSource } from '../provider.types.js';
 import { ProviderSearchError } from '../provider.types.js';
@@ -51,7 +51,7 @@ export class StremioAddonProvider implements PlaybackProvider {
 
   constructor(
     private readonly registry: AddonRegistryService,
-    private readonly config: ConfigService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   isEnabled(): boolean {
@@ -59,12 +59,14 @@ export class StremioAddonProvider implements PlaybackProvider {
   }
 
   private authorizationFor(addonId: string): PlaybackSource['authorization'] | undefined {
-    const raw = this.config.get<string>('STREMIO_ADDON_AUTHORIZATIONS');
+    const raw = this.config?.get<string>('STREMIO_ADDON_AUTHORIZATIONS');
     if (!raw) return undefined;
     try {
       const parsed = JSON.parse(raw) as Record<string, { status?: string; licenseUrl?: string }>;
       const value = parsed[addonId];
-      if (!value || !value.licenseUrl || !['public-domain', 'creative-commons', 'licensed', 'user-owned'].includes(value.status ?? '')) return undefined;
+      if (!value || !['public-domain', 'creative-commons', 'licensed', 'user-owned'].includes(value.status ?? '')) return undefined;
+      if (value.status === 'user-owned' && !value.licenseUrl) return { status: 'user-owned' };
+      if (!value.licenseUrl) return undefined;
       const url = new URL(value.licenseUrl);
       if (url.protocol !== 'https:') return undefined;
       return { status: value.status as NonNullable<PlaybackSource['authorization']>['status'], licenseUrl: url.toString() };
