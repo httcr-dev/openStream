@@ -42,6 +42,9 @@ export function cooldownForStatus(status: number): number {
 export function isPlaybackCandidate(source: PlaybackSource): boolean {
   if (source.target.kind !== 'native' || source.availability?.status !== 'available') return false;
   const authorization = source.authorization;
-  if (!authorization || !authorization.licenseUrl) return false;
-  return ['public-domain', 'creative-commons', 'licensed', 'user-owned'].includes(authorization.status);
+  if (!authorization) return false;
+  if (!['public-domain', 'creative-commons', 'licensed', 'user-owned'].includes(authorization.status)) return false;
+  if (authorization.status === 'user-owned') return true;
+  if (!authorization.licenseUrl) return false;
+  try { return new URL(authorization.licenseUrl).protocol === 'https:'; } catch { return false; }
 }
