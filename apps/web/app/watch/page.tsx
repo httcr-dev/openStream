@@ -196,7 +196,7 @@ function Watch() {
             <button key={source.id} className={source.id === active.id ? '' : 'secondary'}
               disabled={failoverLoading || failedSourceIds.includes(source.id)}
               onClick={() => { setCurrent(source.id); setPlaybackStatus(null); }}>
-              {source.provider} · {sourceSummary(source)}
+              {source.provider} · {source.release?.title || source.label} · {sourceSummary(source)}
               {failedSourceIds.includes(source.id) ? ' · falhou' : ''}
             </button>
           ))}
