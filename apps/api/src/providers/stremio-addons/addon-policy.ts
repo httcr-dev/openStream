@@ -32,6 +32,7 @@ export function isAddonAllowed(addonId: string, allowlist: string[]): boolean {
 
 export function cooldownForStatus(status: number): number {
   if (status === 403) return 15 * 60_000;
+  if (status === 400) return 60_000;
   if (status === 404 || status === 410) return 60 * 60_000;
   if (status === 429) return 10 * 60_000;
   if (status >= 500 || status === 0) return 2 * 60_000;
