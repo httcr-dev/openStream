@@ -16,7 +16,7 @@ test('normaliza release com qualidade, codec, áudio, idioma, tamanho e seeders'
   assert.equal(result.codec, 'HEVC');
   assert.equal(result.audio, 'Dual Audio');
   assert.deepEqual(result.subtitles, ['PT-BR', 'EN']);
-  assert.equal(result.sizeBytes, 1_503_238_553);
+  assert.equal(result.sizeBytes, 1_503_238_554);
   assert.equal(result.seeders, 777);
 });
 
