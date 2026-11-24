@@ -8,6 +8,37 @@ import { api, type CatalogDetail, type Episode, type PlaybackSource } from '@/li
 
 type EpisodeLink = { season: number; episode: number; name: string };
 
+function formatBytes(bytes?: number): string | undefined {
+  if (!bytes || !Number.isFinite(bytes) || bytes <= 0) return undefined;
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) { value /= 1024; unit += 1; }
+  return `${value.toFixed(value >= 10 ? 0 : 1)} ${units[unit]}`;
+}
+
+function sourceSummary(source: PlaybackSource): string {
+  const release = source.release;
+  const sourceType = source.target.kind === 'torrent' ? 'P2P'
+    : source.target.kind === 'embed' ? 'Embed'
+      : source.target.transport === 'hls' ? 'Direto · HLS' : 'Direto';
+  const availability = source.availability?.status === 'available' ? 'verificada'
+    : source.availability?.status === 'unavailable' ? 'indisponível' : 'não verificada';
+  return [
+    release?.quality ?? source.quality,
+    release?.year ? String(release.year) : undefined,
+    release?.season !== undefined && release.episode !== undefined ? `T${release.season}E${release.episode}` : undefined,
+    release?.releaseType,
+    release?.codec,
+    release?.audio,
+    release?.subtitles?.length ? release.subtitles.join('+') : undefined,
+    formatBytes(release?.sizeBytes),
+    release?.seeders !== undefined ? `${release.seeders.toLocaleString('pt-BR')} seeders` : undefined,
+    sourceType,
+    availability,
+  ].filter(Boolean).join(' · ');
+}
+
 function Watch() {
   const sp = useSearchParams();
   const id = sp.get('id');
@@ -165,14 +196,14 @@ function Watch() {
             <button key={source.id} className={source.id === active.id ? '' : 'secondary'}
               disabled={failoverLoading || failedSourceIds.includes(source.id)}
               onClick={() => { setCurrent(source.id); setPlaybackStatus(null); }}>
-              {source.provider} · {source.target.kind === 'native'
-                ? (source.quality ?? 'player próprio')
-                : source.target.kind === 'torrent' ? 'torrent' : 'embed'}
+              {source.provider} · {source.release?.title || source.label} · {sourceSummary(source)}
               {failedSourceIds.includes(source.id) ? ' · falhou' : ''}
             </button>
           ))}
         </div>
-        <p className="muted">{active.label}</p>
+        <p className="muted">{active.release?.title || active.label}</p>
+        <p className="muted" aria-label="Detalhes da fonte">{sourceSummary(active)}</p>
+        {active.availability?.reason && <p className="muted">{active.availability.reason}</p>}
       </>}
       {providerErrors.length > 0 && (
         <section aria-label="Falhas na busca de fontes">

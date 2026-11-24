@@ -8,7 +8,7 @@ const REQUEST_TIMEOUT_MS = 5_000;
 const DIRECTORY_TIMEOUT_MS = 5_000;
 const DIRECTORY_PAGE_SIZE = 100;
 const MAX_DIRECTORY_PAGES = 2;
-const MANIFEST_CONCURRENCY = 25;
+const MANIFEST_CONCURRENCY = 10;
 const DEFAULT_DIRECTORY_URL = 'https://addons-stremio.com/api/v1/addons';
 
 type DirectoryEntry = {
@@ -159,7 +159,7 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   discoveryEnabled(): boolean {
-    return this.config.get<string>('STREMIO_ADDON_DISCOVERY_ENABLED') !== 'false';
+    return this.config.get<string>('STREMIO_ADDON_DISCOVERY_ENABLED') === 'true';
   }
 
   async refresh(): Promise<RegisteredAddon[]> {
@@ -172,9 +172,10 @@ export class AddonRegistryService implements OnModuleInit {
     // Directory entries are loaded first; explicit user configuration wins on duplicate IDs.
     const uniqueDiscovered = [...new Set(discoveredUrls)];
     const uniqueManual = [...new Set(manualUrls)];
-    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url, 'directory'));
+    const allowedIds = this.allowedAddonIds();
+    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url, 'directory', allowedIds));
     // Run manual URLs last so a user's configured instance overrides a directory listing.
-    const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url, 'manual'));
+    const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url, 'manual', allowedIds));
     const registered = [...discovered, ...manual];
     const uniqueReady = new Set(registered.filter((addon) => addon.status === 'ready').map((addon) => addon.manifest.id));
     this.logger.log(`Registro Stremio: ${uniqueReady.size} addon(s) válidos (${uniqueDiscovered.length} descobertos, ${uniqueManual.length} manuais).`);
@@ -222,10 +223,15 @@ export class AddonRegistryService implements OnModuleInit {
     }
   }
 
-  private async register(manifestUrl: string, source: 'directory' | 'manual'): Promise<RegisteredAddon> {
+  private allowedAddonIds(): string[] {
+    return (this.config.get<string>('STREMIO_ADDON_ALLOWED_IDS') ?? '').split(',').map((value) => value.trim()).filter(Boolean);
+  }
+
+  private async register(manifestUrl: string, source: 'directory' | 'manual', allowedIds: string[] = []): Promise<RegisteredAddon> {
     try {
       const parsed = new URL(manifestUrl);
       if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('Protocolo de URL inválido');
+      if (!await isSafeAddonUrl(manifestUrl)) throw new Error('URL insegura ou inacessível');
       const response = await fetch(manifestUrl, {
         headers: { Accept: 'application/json' },
         signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
@@ -234,6 +240,9 @@ export class AddonRegistryService implements OnModuleInit {
       const manifest = (await response.json()) as StremioManifest;
       if (!manifest.id || !manifest.name || !Array.isArray(manifest.resources)) {
         throw new Error('Manifest inválido: id, name e resources são obrigatórios');
+      }
+      if (!allowedIds.includes(manifest.id)) {
+        throw new Error(`Addon ${manifest.id} não está na allowlist STREMIO_ADDON_ALLOWED_IDS`);
       }
       const addon: RegisteredAddon = {
         manifestUrl,
@@ -265,8 +274,28 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   enabled(): RegisteredAddon[] {
-    return this.list().filter((addon) => addon.status === 'ready' && supportsStream(addon.manifest) &&
-      !(addon.source === 'directory' && addon.manifest.behaviorHints?.configurationRequired));
+    return this.list().filter((addon) => addon.status === 'ready' &&
+      supportsStream(addon.manifest) && this.allowedAddonIds().includes(addon.manifest.id) &&
+      !addon.manifest.behaviorHints?.configurationRequired);
+  }
+
+  getStats() {
+    const addons = this.list();
+    const ready = addons.filter((addon) => addon.status === 'ready');
+    const enabled = this.enabled();
+    const health = [...this.health.values()];
+    const requests = health.reduce((sum, item) => sum + item.successes + item.failures, 0);
+    const successes = health.reduce((sum, item) => sum + item.successes, 0);
+    return {
+      discoveryEnabled: this.discoveryEnabled(),
+      discovered: addons.filter((addon) => addon.source === 'directory').length,
+      manuallyConfigured: addons.filter((addon) => addon.source === 'manual').length,
+      ready: ready.length,
+      enabled: enabled.length,
+      rejected: addons.filter((addon) => addon.status === 'error').length,
+      requests,
+      successRate: requests ? successes / requests : null,
+    };
   }
 
   recordRequest(addonId: string, success: boolean, latencyMs: number): void {

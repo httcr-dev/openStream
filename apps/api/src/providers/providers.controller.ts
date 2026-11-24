@@ -18,6 +18,11 @@ export class ProvidersController {
     return this.registry.describe();
   }
 
+  @Get('addons/stats')
+  addonStats() {
+    return this.addons.getStats();
+  }
+
   @Get('addons')
   addonsList() {
     return this.addons.list().map(({ manifestUrl, manifest, status, error }) => ({

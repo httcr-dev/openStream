@@ -26,19 +26,25 @@ pnpm dev:web
 
 PostgreSQL é opcional e pode ser iniciado com `pnpm infra:up`. O backend funciona sem servidor de mídia local.
 
-## Addons Stremio
+## Addons Stremio e política de admissão
 
-A API descobre automaticamente addons públicos pelo diretório independente `addons-stremio.com` (API de catálogo para clientes de descoberta), percorre até duas páginas de listagens e valida os manifests encontrados. O carregamento acontece em segundo plano para não bloquear a inicialização da API; a primeira busca por fontes aguarda a conclusão da descoberta. São mantidas apenas URLs HTTP(S) públicas, rejeitando destinos locais/privados para reduzir risco de SSRF. A lista manual `STREMIO_ADDON_URLS` continua disponível para addons configuráveis, privados ou ausentes no diretório, e prevalece quando o mesmo addon aparece nas duas fontes. A descoberta pode ser desativada com `STREMIO_ADDON_DISCOVERY_ENABLED=false` e o diretório pode ser substituído por `STREMIO_ADDON_DIRECTORY_URL`.
+A descoberta pública fica **desativada por padrão**. Para habilitá-la, defina `STREMIO_ADDON_DISCOVERY_ENABLED=true`; mesmo assim, manifests só são carregados quando o ID consta em `STREMIO_ADDON_ALLOWED_IDS`. A configuração manual usa `STREMIO_ADDON_URLS`, também sujeita à allowlist. Todas as URLs são verificadas contra destinos locais/privados para reduzir risco de SSRF.
 
-Para séries, a consulta usa o IMDb ID e o identificador de episódio no formato `tt...:temporada:episódio`. Isso faz com que o addon receba o episódio específico, em vez de uma busca textual genérica pelo nome da série.
+Além da allowlist, cada addon precisa de uma declaração explícita em `STREMIO_ADDON_AUTHORIZATIONS`, um JSON indexado pelo ID do manifest. Exemplo para uma fonte licenciada:
 
-São aceitos streams HTTP(S) diretos, IDs de vídeo do YouTube para embed oficial e candidatos torrent. No caso de torrents, o adaptador preserva o info hash, índice do arquivo e trackers declarados pelo addon.
+```env
+STREMIO_ADDON_URLS=https://my-authorized-addon.example/manifest.json
+STREMIO_ADDON_ALLOWED_IDS=org.example.my-addon
+STREMIO_ADDON_AUTHORIZATIONS={"org.example.my-addon":{"status":"licensed","licenseUrl":"https://example.org/license"}}
+```
 
-Para Comet/ElfHosted, use a URL de manifest gerada pela página `/configure`. O manifest público sem configuração pode responder HTTP 403 no endpoint de streams. Addons que retornam 403 ficam em cooldown por 15 minutos para evitar chamadas e logs repetitivos; os demais addons continuam sendo consultados.
+Os status aceitos são `public-domain`, `creative-commons`, `licensed` e `user-owned`. Para `user-owned`, a URL de licença pode ser omitida. Essa declaração é uma configuração do operador, não uma auditoria jurídica automática. Sem allowlist e autorização, o addon não entrega fontes ao player.
 
-A descoberta consulta até 200 listagens por popularidade e registra addons que declaram o recurso `stream`; na hora da busca, respeita apenas compatibilidade técnica declarada para filme/série e prefixo do identificador. Não há filtros manuais por qualidade ou categoria. O ranking adaptativo considera taxa de resposta e latência observadas.
+A compatibilidade exige que o manifest declare recurso `stream`, tipo de mídia e prefixo de ID compatíveis. Respostas com erros HTTP entram em cooldown: 403, 404/410, 429, 5xx e falhas de conexão têm janelas distintas. Erros por conteúdo não devem ser confundidos com indisponibilidade geral do provedor.
 
-## Reprodução P2P
+Fontes externas só entram no seletor quando forem nativas HTTP/HLS, tiverem autorização declarada e a verificação confirmar que a URL retorna mídia ou playlist HLS válida. `unknown` não é disponibilidade: embeds e P2P sem verificação não entram como opções automáticas. O failover aplica a mesma política para não substituir uma falha por outra fonte não verificada.
+
+## Normalização e seleção de fontes\n\nCada fonte mantém seu destino original e pode incluir `release` com metadados normalizados. O deduplicador usa título normalizado, ano, episódio e atributos técnicos para agrupar releases equivalentes de addons diferentes; quando há equivalência, preserva a fonte melhor ranqueada. Fontes sem metadados suficientes continuam disponíveis e são deduplicadas pelo destino. O seletor apresenta resolução, tipo de release, codec, áudio, idiomas de legenda, tamanho, seeders, transporte e estado da verificação.\n\nO ranking é heurístico e determinístico, não uma garantia de qualidade real: seeders variam, `unknown` significa que não houve prova de disponibilidade e codecs podem não ser suportados pelo navegador.\n\n## Reprodução P2P
 
 O backend usa WebTorrent para abrir o torrent sob demanda e disponibilizar o arquivo selecionado por HTTP. O player web continua usando o elemento `<video>` normal; o endpoint suporta requisições `Range`, necessárias para iniciar a reprodução e permitir seek.
 
@@ -73,6 +79,7 @@ YouTube Search e PeerTube Search foram retirados do registro automático porque 
 | GET | `/api/v1/playback/torrents/:infoHash/:fileIdx/stream` | Stream HTTP de um arquivo torrent |
 | GET | `/api/v1/providers` | Providers ativos |
 | GET | `/api/v1/addons` | Addons carregados e estado dos manifests |
+| GET | `/api/v1/addons/stats` | Contadores de descoberta, allowlist e saúde |
 
 ## Testes
 
@@ -92,4 +99,4 @@ O comando compila a API e executa os testes unitários com o test runner nativo 
 - Métricas de falha/failover ficam em memória por até uma hora e são limitadas às 500 fontes mais recentes; reiniciar a API zera esses dados.
 - Falhas internas de iframes/embed não podem ser detectadas de forma confiável pelo navegador por causa do isolamento entre origens; nesses casos, a troca manual de fonte continua disponível.
 - A descoberta global de addons é automática, com configuração manual opcional para instâncias personalizadas.
-- A verificação de direitos/autorização foi deliberadamente adiada para uma fase posterior, conforme a prioridade atual de validar o funcionamento local.
+- A autorização declarada é obrigatória para admitir fontes externas; a configuração representa a responsabilidade do operador e não substitui verificação jurídica.

@@ -11,6 +11,14 @@ export interface CatalogItem {
   overview: string;
   posterUrl?: string;
   backdropUrl?: string;
+  genres?: string[];
+  originalLanguage?: string;
+}
+
+export interface ExternalMediaIds {
+  imdbId?: string;
+  tvdbId?: string;
+  tvmazeId?: string;
 }
 
 export interface SeasonSummary {
@@ -21,6 +29,8 @@ export interface SeasonSummary {
 
 export interface CatalogDetail extends CatalogItem {
   imdbId?: string;
+  externalIds?: ExternalMediaIds;
+  runtimeMinutes?: number;
   seasons?: SeasonSummary[];
 }
 
@@ -29,4 +39,6 @@ export interface EpisodeSummary {
   name: string;
   overview: string;
   stillUrl?: string;
+  airDate?: string;
+  runtimeMinutes?: number;
 }

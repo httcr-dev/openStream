@@ -17,6 +17,8 @@ import { mkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebTorrent, { type Torrent, type TorrentFile } from 'webtorrent';
+import { parseByteRange, type ByteRange } from './byte-range.js';
+export { parseByteRange } from './byte-range.js';
 
 const METADATA_TIMEOUT_MS = 120_000;
 const FIRST_BYTE_TIMEOUT_MS = 45_000;
@@ -25,8 +27,6 @@ const MAX_ACTIVE_TORRENTS = 5;
 const VIDEO_EXTENSIONS = new Set([
   '.mp4', '.m4v', '.mkv', '.webm', '.mov', '.ogv', '.ogg', '.avi', '.ts', '.mpeg', '.mpg',
 ]);
-
-type ByteRange = { start: number; end: number };
 
 type TorrentSessionMetrics = {
   createdAt: number;
@@ -47,31 +47,6 @@ type TorrentSessionMetrics = {
 };
 
 type TorrentSession = TorrentSessionMetrics & { torrent: Promise<Torrent> };
-
-export function parseByteRange(header: string | undefined, size: number): ByteRange | null | false {
-  if (!header) return null;
-  if (!Number.isSafeInteger(size) || size <= 0) return false;
-
-  const match = /^bytes=(\d*)-(\d*)$/.exec(header.trim());
-  if (!match) return false;
-
-  let start: number;
-  let end: number;
-  if (!match[1]) {
-    const suffixLength = Number(match[2]);
-    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return false;
-    start = Math.max(0, size - suffixLength);
-    end = size - 1;
-  } else {
-    start = Number(match[1]);
-    end = match[2] ? Number(match[2]) : size - 1;
-  }
-
-  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start || start >= size) {
-    return false;
-  }
-  return { start, end: Math.min(end, size - 1) };
-}
 
 function normalizeInfoHash(value: string): string {
   const hash = value.trim();
