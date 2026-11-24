@@ -4,6 +4,7 @@ import { PlaybackRuntimeService } from '../dist/providers/playback-runtime.servi
 
 const source = (id, status = 'available') => ({
   id, provider: 'test-provider', label: id,
+  authorization: { status: 'user-owned' },
   target: { kind: 'native', transport: 'http', url: `https://media.example/${id}.mp4` },
   availability: { status, checkedAt: new Date().toISOString() },
 });
