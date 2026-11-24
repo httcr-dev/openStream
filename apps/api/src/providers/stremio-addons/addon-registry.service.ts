@@ -163,7 +163,7 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   async refresh(): Promise<RegisteredAddon[]> {
-    const discoveredUrls: string[] = []; // Public directory discovery is intentionally opt-in and never auto-admits providers.
+    const discoveredUrls = this.discoveryEnabled() ? await this.discoverManifestUrls() : [];
     const manualUrls = (this.config.get<string>('STREMIO_ADDON_URLS') ?? '')
       .split(',')
       .map((value) => value.trim())
@@ -171,9 +171,9 @@ export class AddonRegistryService implements OnModuleInit {
 
     // Directory entries are loaded first; explicit user configuration wins on duplicate IDs.
     const uniqueDiscovered = [...new Set(discoveredUrls)];
-    const allowedIds = this.allowedAddonIds();
     const uniqueManual = [...new Set(manualUrls)];
-    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url, 'directory'));
+    const allowedIds = this.allowedAddonIds();
+    const discovered = await mapWithConcurrency(uniqueDiscovered, MANIFEST_CONCURRENCY, (url) => this.register(url, 'directory', allowedIds));
     // Run manual URLs last so a user's configured instance overrides a directory listing.
     const manual = await mapWithConcurrency(uniqueManual, MANIFEST_CONCURRENCY, (url) => this.register(url, 'manual', allowedIds));
     const registered = [...discovered, ...manual];
@@ -241,7 +241,7 @@ export class AddonRegistryService implements OnModuleInit {
       if (!manifest.id || !manifest.name || !Array.isArray(manifest.resources)) {
         throw new Error('Manifest inválido: id, name e resources são obrigatórios');
       }
-      if (source !== 'manual' || !allowedIds.includes(manifest.id)) {
+      if (!allowedIds.includes(manifest.id)) {
         throw new Error(`Addon ${manifest.id} não está na allowlist STREMIO_ADDON_ALLOWED_IDS`);
       }
       const addon: RegisteredAddon = {
