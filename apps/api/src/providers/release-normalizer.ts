@@ -30,7 +30,7 @@ function parseSeeders(value: number | undefined, text: string): number | undefin
   return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
-function cleanTitle(value: string, text: string): string {
+function cleanTitle(value: string): string {
   let title = value;
   title = title.replace(/\bS\d{1,2}E\d{1,3}\b/ig, ' ');
   title = title.replace(/\b\d{1,2}x\d{1,3}\b/ig, ' ');
@@ -40,7 +40,7 @@ function cleanTitle(value: string, text: string): string {
   title = title.replace(/\b(?:x26[45]|h\.?26[45]|hevc|avc|av1|xvid|vp9|aac|dts|eac3|ac3|truehd|atmos|dual(?:[ ._-]?audio)?)\b/ig, ' ');
   title = title.replace(/\b(?:pt[ ._-]?br|pt[ ._-]?pt|multi(?:[ ._-]?subs?)?|\d+(?:[.,]\d+)?\s*(?:gb|gib|mb|mib|tb|tib)|[\d.,]+\s*(?:seeders?|peers?))\b/ig, ' ');
   title = title.replace(/[._]+/g, ' ').replace(/[()[\]{}]/g, ' ').replace(/\s+/g, ' ').trim();
-  return title || value.trim() || text.trim();
+  return title;
 }
 
 export function normalizeReleaseMetadata(input: ReleaseInput): ReleaseMetadata {
@@ -83,7 +83,7 @@ export function normalizeReleaseMetadata(input: ReleaseInput): ReleaseMetadata {
   const yearMatch = /\b((?:19|20)\d{2})\b/.exec(text);
 
   return {
-    title: cleanTitle(rawTitle, text),
+    title: cleanTitle(rawTitle),
     ...(yearMatch ? { year: Number(yearMatch[1]) } : {}),
     ...(episodeMatch ? { season: Number(episodeMatch[1]), episode: Number(episodeMatch[2]) } : {}),
     ...(quality ? { quality } : {}),
