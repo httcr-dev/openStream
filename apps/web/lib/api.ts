@@ -117,6 +117,7 @@ export const api = {
     provider?: string;
     failedSourceIds: string[];
     failedSourceId: string;
+    failedSourceProvider?: string;
     reason: string;
   }) => post<FailoverResult>('/playback/failover', input),
   addons: () => get<{ id: string; name: string; description?: string; status: 'ready' | 'error'; error?: string; resources: unknown[]; health?: { requests: number; successRate: number | null; averageLatencyMs: number | null; score: number } }[]>('/addons'),
