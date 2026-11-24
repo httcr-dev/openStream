@@ -57,7 +57,9 @@ function normalizeTitle(title: string): string {
 
 function releaseKey(source: PlaybackSource): string {
   const release = source.release;
-  if (release?.title?.trim()) {
+  const hasTechnicalFingerprint = Boolean(release?.quality || release?.releaseType || release?.codec ||
+    release?.audio || release?.subtitles?.length || release?.sizeBytes);
+  if (release?.title?.trim() && hasTechnicalFingerprint) {
     return [
       'release',
       normalizeTitle(release.title),
@@ -68,6 +70,7 @@ function releaseKey(source: PlaybackSource): string {
       release.releaseType ?? '',
       release.codec ?? '',
       release.audio ?? '',
+      release.sizeBytes ?? '',
       [...(release.subtitles ?? [])].map((value) => value.toUpperCase()).sort().join(','),
     ].join('|');
   }
