@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { MediaRef, PlaybackProvider, PlaybackSource } from '../provider.types.js';
 import { ProviderSearchError } from '../provider.types.js';
+import { normalizeReleaseMetadata } from '../release-normalizer.js';
 import { AddonRegistryService } from './addon-registry.service.js';
 import type { RegisteredAddon, StremioStream } from './addon.types.js';
 
@@ -122,6 +123,14 @@ export class StremioAddonProvider implements PlaybackProvider {
               .filter(Boolean)
               .join(' · ') || addon.manifest.name;
             const id = `${addon.manifest.id}:${contentId}:${index}`;
+            const release = normalizeReleaseMetadata({
+              title: stream.title ?? stream.name,
+              description: stream.description,
+              size: stream.size,
+              seeders: stream.seeders,
+            });
+            const hasRelease = Boolean(release.title || release.year || release.season || release.quality ||
+              release.codec || release.audio || release.subtitles.length || release.sizeBytes || release.seeders !== undefined);
 
             if (stream.url) {
               let url: URL;
@@ -136,6 +145,7 @@ export class StremioAddonProvider implements PlaybackProvider {
               const transport = /\.m3u8(?:$|\?)/i.test(url.href) ? 'hls' : 'http';
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
+                ...(hasRelease ? { release, quality: release.quality } : {}),
                 target: { kind: 'native' as const, transport, url: url.toString() },
               }];
             }
