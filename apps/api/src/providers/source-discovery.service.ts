@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ProviderRegistry } from './provider.registry.js';
 import { ProviderSearchError } from './provider.types.js';
+import { rankPlaybackSources } from './source-ranking.js';
 import { SourceAvailabilityValidatorService } from './source-availability-validator.service.js';
 import type { MediaRef, PlaybackSource, ProviderSearchFailure } from './provider.types.js';
 
@@ -69,7 +70,7 @@ export class SourceDiscoveryService {
 
     const deduplicated = this.deduplicate(validSources);
     const available = await this.availability.validate(deduplicated);
-    return { sources: available, errors };
+    return { sources: rankPlaybackSources(available, preferredProviderId), errors };
   }
 
   private isValidSource(source: PlaybackSource): boolean {
