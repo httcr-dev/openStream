@@ -37,3 +37,11 @@ test('não agrupa releases com qualidade, codec ou episódio diferentes', () => 
   ]);
   assert.equal(ranked.length, 3);
 });
+
+test('não agrupa fontes com título genérico quando faltam atributos técnicos', () => {
+  const ranked = rankPlaybackSources([
+    source('one', { title: 'ToonsHub', subtitles: [] }),
+    source('two', { title: 'ToonsHub', subtitles: [] }),
+  ]);
+  assert.equal(ranked.length, 2);
+});
