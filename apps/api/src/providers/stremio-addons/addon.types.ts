@@ -29,6 +29,8 @@ export interface StremioStream {
   ytId?: string;
   infoHash?: string;
   fileIdx?: number;
+  size?: string | number;
+  seeders?: number;
   externalUrl?: string;
   sources?: string[];
   behaviorHints?: { notWebReady?: boolean; proxyHeaders?: unknown };
