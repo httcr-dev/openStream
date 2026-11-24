@@ -2,6 +2,7 @@ import { Module, type OnModuleInit } from '@nestjs/common';
 import { CatalogModule } from '../catalog/catalog.module.js';
 import { InternetArchiveProvider } from './internet-archive/internet-archive.provider.js';
 import { PlaybackSourceResolverService } from './playback-source-resolver.service.js';
+import { PlaybackRuntimeService } from './playback-runtime.service.js';
 import { ProviderRegistry } from './provider.registry.js';
 import { SourceDiscoveryService } from './source-discovery.service.js';
 import { SourceAvailabilityValidatorService } from './source-availability-validator.service.js';
@@ -18,6 +19,7 @@ import { TorrentPlaybackService } from './torrent-playback.service.js';
   providers: [
     ProviderRegistry,
     PlaybackSourceResolverService,
+    PlaybackRuntimeService,
     SourceDiscoveryService,
     SourceAvailabilityValidatorService,
     SourceUrlSafetyService,
