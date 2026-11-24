@@ -130,6 +130,7 @@ function Watch() {
         provider: preferredProvider,
         failedSourceIds: attempted,
         failedSourceId: active.id,
+        failedSourceProvider: active.provider,
         reason,
       });
       setSources((currentSources) => {
