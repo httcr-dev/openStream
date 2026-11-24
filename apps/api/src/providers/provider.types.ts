@@ -23,11 +23,26 @@ export interface SourceAuthorization {
   licenseUrl?: string;
 }
 
+export interface ReleaseMetadata {
+  title: string;
+  year?: number;
+  season?: number;
+  episode?: number;
+  quality?: '2160p' | '1440p' | '1080p' | '720p' | '576p' | '480p';
+  releaseType?: 'BluRay' | 'WEB-DL' | 'WEBRip' | 'HDTV' | 'DVDRip';
+  codec?: 'AV1' | 'HEVC' | 'AVC' | 'MPEG-2' | 'VP9' | string;
+  audio?: string;
+  subtitles: string[];
+  sizeBytes?: number;
+  seeders?: number;
+}
+
 export interface PlaybackSource {
   id: string;
   provider: string;
   label: string;
   quality?: string;
+  release?: ReleaseMetadata;
   target: PlaybackTarget;
   /** ID do addon/provider que encontrou a fonte, usado para continuidade. */
   providerId?: string;
