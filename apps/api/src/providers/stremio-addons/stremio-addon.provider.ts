@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import type { MediaRef, PlaybackProvider, PlaybackSource } from '../provider.types.js';
 import { ProviderSearchError } from '../provider.types.js';
 import { normalizeReleaseMetadata } from '../release-normalizer.js';
 import { AddonRegistryService } from './addon-registry.service.js';
 import type { RegisteredAddon, StremioStream } from './addon.types.js';
+import { cooldownForStatus, isManifestEligible } from './addon-policy.js';
 
-const FORBIDDEN_COOLDOWN_MS = 15 * 60_000;
+const MAX_COOLDOWNS = 500;
 
 function supportsType(addon: RegisteredAddon, type: 'movie' | 'series'): boolean {
   const declaredTypes = addon.manifest.types;
@@ -63,12 +65,30 @@ export class StremioAddonProvider implements PlaybackProvider {
   readonly playerKind = 'native' as const;
   readonly note = 'Addons compatíveis com o protocolo Stremio, consultados automaticamente.';
   private readonly logger = new Logger(StremioAddonProvider.name);
-  private readonly forbiddenCooldowns = new Map<string, number>();
+  private readonly cooldowns = new Map<string, { until: number; status: number }>();
 
-  constructor(private readonly registry: AddonRegistryService) {}
+  constructor(
+    private readonly registry: AddonRegistryService,
+    private readonly config: ConfigService,
+  ) {}
 
   isEnabled(): boolean {
-    return this.registry.enabled().length > 0 || this.registry.discoveryEnabled();
+    return this.registry.enabled().length > 0;
+  }
+
+  private authorizationFor(addonId: string): PlaybackSource['authorization'] | undefined {
+    const raw = this.config.get<string>('STREMIO_ADDON_AUTHORIZATIONS');
+    if (!raw) return undefined;
+    try {
+      const parsed = JSON.parse(raw) as Record<string, { status?: string; licenseUrl?: string }>;
+      const value = parsed[addonId];
+      if (!value || !value.licenseUrl || !['public-domain', 'creative-commons', 'licensed', 'user-owned'].includes(value.status ?? '')) return undefined;
+      const url = new URL(value.licenseUrl);
+      if (url.protocol !== 'https:') return undefined;
+      return { status: value.status as NonNullable<PlaybackSource['authorization']>['status'], licenseUrl: url.toString() };
+    } catch {
+      return undefined;
+    }
   }
 
   async findSources(ref: MediaRef): Promise<PlaybackSource[]> {
@@ -77,22 +97,22 @@ export class StremioAddonProvider implements PlaybackProvider {
     if (!contentId) return [];
     const type = ref.kind === 'movie' ? 'movie' : 'series';
     const eligible = this.registry.enabled().filter((addon) =>
-      supportsType(addon, type) && supportsId(addon, contentId),
+      isManifestEligible(addon.manifest, type, contentId),
     );
 
     const failures: { provider: string; message: string }[] = [];
     const now = Date.now();
     const addons = eligible.filter((addon) => {
-      const until = this.forbiddenCooldowns.get(addon.manifest.id);
-      if (!until) return true;
-      if (until <= now) {
-        this.forbiddenCooldowns.delete(addon.manifest.id);
+      const cooldown = this.cooldowns.get(addon.manifest.id);
+      if (!cooldown) return true;
+      if (cooldown.until <= now) {
+        this.cooldowns.delete(addon.manifest.id);
         return true;
       }
-      const remainingMinutes = Math.max(1, Math.ceil((until - now) / 60_000));
+      const remainingMinutes = Math.max(1, Math.ceil((cooldown.until - now) / 60_000));
       failures.push({
         provider: addon.manifest.name,
-        message: `HTTP 403 anterior; consulta pausada por mais ${remainingMinutes} min. Confira a configuração e a URL do manifest do addon.`,
+        message: `HTTP ${cooldown.status} anterior; consulta pausada por mais ${remainingMinutes} min. Confira a configuração e a URL do manifest do addon.`,
       });
       return false;
     });
@@ -146,6 +166,7 @@ export class StremioAddonProvider implements PlaybackProvider {
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
                 ...(hasRelease ? { release, quality: release.quality } : {}),
+                ...(this.authorizationFor(addon.manifest.id) ? { authorization: this.authorizationFor(addon.manifest.id) } : {}),
                 target: { kind: 'native' as const, transport, url: url.toString() },
               }];
             }
@@ -154,6 +175,7 @@ export class StremioAddonProvider implements PlaybackProvider {
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
                 ...(hasRelease ? { release, quality: release.quality } : {}),
+                ...(this.authorizationFor(addon.manifest.id) ? { authorization: this.authorizationFor(addon.manifest.id) } : {}),
                 target: {
                   kind: 'embed' as const,
                   provider: 'youtube',
@@ -182,8 +204,16 @@ export class StremioAddonProvider implements PlaybackProvider {
           this.registry.recordRequest(addon.manifest.id, false, Date.now() - startedAt);
           const message = error instanceof Error ? error.message : String(error);
           const status = Number(/HTTP (\d{3})/.exec(message)?.[1] ?? 0);
-          if (status === 403) {
-            this.forbiddenCooldowns.set(addon.manifest.id, Date.now() + FORBIDDEN_COOLDOWN_MS);
+          
+          const cooldownMs = cooldownForStatus(status);
+          if (cooldownMs > 0) {
+            this.cooldowns.delete(addon.manifest.id);
+            this.cooldowns.set(addon.manifest.id, { until: Date.now() + cooldownMs, status });
+            while (this.cooldowns.size > MAX_COOLDOWNS) {
+              const oldest = this.cooldowns.keys().next().value;
+              if (!oldest) break;
+              this.cooldowns.delete(oldest);
+            }
           }
           const configurationHint = status === 403 && addon.manifest.id.toLowerCase().includes('comet')
             ? ' Verifique se STREMIO_ADDON_URLS contém a URL de manifest gerada pela página /configure do Comet; a URL pública sem configuração pode responder 403.'
