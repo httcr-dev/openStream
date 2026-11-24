@@ -1,6 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PlaybackSourceResolverService } from './playback-source-resolver.service.js';
-import type { PlaybackSource } from './provider.types.js';
 
 export interface PlaybackFailoverInput {
   id: string;
