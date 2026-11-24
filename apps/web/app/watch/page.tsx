@@ -165,14 +165,14 @@ function Watch() {
             <button key={source.id} className={source.id === active.id ? '' : 'secondary'}
               disabled={failoverLoading || failedSourceIds.includes(source.id)}
               onClick={() => { setCurrent(source.id); setPlaybackStatus(null); }}>
-              {source.provider} · {source.target.kind === 'native'
-                ? (source.quality ?? 'player próprio')
-                : source.target.kind === 'torrent' ? 'torrent' : 'embed'}
+              {source.provider} · {sourceSummary(source)}
               {failedSourceIds.includes(source.id) ? ' · falhou' : ''}
             </button>
           ))}
         </div>
-        <p className="muted">{active.label}</p>
+        <p className="muted">{active.release?.title || active.label}</p>
+        <p className="muted" aria-label="Detalhes da fonte">{sourceSummary(active)}</p>
+        {active.availability?.reason && <p className="muted">{active.availability.reason}</p>}
       </>}
       {providerErrors.length > 0 && (
         <section aria-label="Falhas na busca de fontes">
