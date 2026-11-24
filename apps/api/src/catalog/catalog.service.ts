@@ -30,7 +30,7 @@ export class CatalogService {
     const token = this.config.get<string>('TMDB_READ_TOKEN');
     if (!token) throw new ServiceUnavailableException('TMDB_READ_TOKEN não configurado.');
     const base = this.config.get<string>('TMDB_BASE_URL') ?? DEFAULT_TMDB_BASE;
-    const url = new URL(`${base.replace(/\\/+$/, '')}${path}`);
+    const url = new URL(`${base.replace(/\/+$/, '')}${path}`);
     url.searchParams.set('language', this.language);
     for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
 
