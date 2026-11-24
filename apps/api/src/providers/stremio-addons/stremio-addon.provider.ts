@@ -91,6 +91,7 @@ export class StremioAddonProvider implements PlaybackProvider {
       const cooldown = this.cooldowns.get(cooldownKey) ?? this.cooldowns.get(addon.manifest.id);
       if (!cooldown) return true;
       if (cooldown.until <= now) {
+        this.cooldowns.delete(cooldownKey);
         this.cooldowns.delete(addon.manifest.id);
         return true;
       }
@@ -136,6 +137,7 @@ export class StremioAddonProvider implements PlaybackProvider {
             });
             const hasRelease = Boolean(release.title || release.year || release.season || release.quality ||
               release.codec || release.audio || release.subtitles.length || release.sizeBytes || release.seeders !== undefined);
+            const authorization = this.authorizationFor(addon.manifest.id);
 
             if (stream.url) {
               let url: URL;
@@ -151,7 +153,7 @@ export class StremioAddonProvider implements PlaybackProvider {
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
                 ...(hasRelease ? { release, quality: release.quality } : {}),
-                ...(this.authorizationFor(addon.manifest.id) ? { authorization: this.authorizationFor(addon.manifest.id) } : {}),
+                ...(authorization ? { authorization } : {}),
                 target: { kind: 'native' as const, transport, url: url.toString() },
               }];
             }
