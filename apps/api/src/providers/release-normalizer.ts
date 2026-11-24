@@ -47,7 +47,7 @@ export function normalizeReleaseMetadata(input: ReleaseInput): ReleaseMetadata {
   const rawTitle = input.title?.trim() ?? '';
   const description = input.description?.trim() ?? '';
   const text = `${rawTitle} ${description}`.trim();
-  const quality = QUALITY.find((item) => new RegExp(`\\\\b${item}\\\\b`, 'i').test(text));
+  const quality = QUALITY.find((item) => new RegExp(`\\b${item}\\b`, 'i').test(text));
   const releaseType = /blu[ ._-]?ray|brrip|bdrip/i.test(text) ? 'BluRay'
     : /web[ ._-]?dl/i.test(text) ? 'WEB-DL'
       : /web[ ._-]?rip/i.test(text) ? 'WEBRip'
@@ -71,7 +71,7 @@ export function normalizeReleaseMetadata(input: ReleaseInput): ReleaseMetadata {
   const subtitles = LANGUAGES.filter((language) => {
     const pattern = language === 'PT-BR' ? /\bPT[ ._-]?BR\b/i
       : language === 'PT-PT' ? /\bPT[ ._-]?PT\b/i
-        : new RegExp(`\\\\b${language}\\\\b`, 'i');
+        : new RegExp(`\\b${language}\\b`, 'i');
     return pattern.test(text);
   });
 
