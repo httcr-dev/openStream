@@ -47,8 +47,6 @@ export function normalizeReleaseMetadata(input: ReleaseInput): ReleaseMetadata {
   const rawTitle = input.title?.trim() ?? '';
   const description = input.description?.trim() ?? '';
   const text = `${rawTitle} ${description}`.trim();
-  const upper = text.toUpperCase();
-
   const quality = QUALITY.find((item) => new RegExp(`\\\\b${item}\\\\b`, 'i').test(text));
   const releaseType = /blu[ ._-]?ray|brrip|bdrip/i.test(text) ? 'BluRay'
     : /web[ ._-]?dl/i.test(text) ? 'WEB-DL'
