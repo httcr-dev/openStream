@@ -85,7 +85,8 @@ export class StremioAddonProvider implements PlaybackProvider {
     const failures: { provider: string; message: string }[] = [];
     const now = Date.now();
     const addons = eligible.filter((addon) => {
-      const cooldown = this.cooldowns.get(addon.manifest.id);
+      const cooldownKey = `${addon.manifest.id}:${contentId}`;
+      const cooldown = this.cooldowns.get(cooldownKey) ?? this.cooldowns.get(addon.manifest.id);
       if (!cooldown) return true;
       if (cooldown.until <= now) {
         this.cooldowns.delete(addon.manifest.id);
@@ -189,8 +190,11 @@ export class StremioAddonProvider implements PlaybackProvider {
           
           const cooldownMs = cooldownForStatus(status);
           if (cooldownMs > 0) {
-            this.cooldowns.delete(addon.manifest.id);
-            this.cooldowns.set(addon.manifest.id, { until: Date.now() + cooldownMs, status });
+            const scopedKey = status === 400 || status === 404 || status === 410
+              ? `${addon.manifest.id}:${contentId}`
+              : addon.manifest.id;
+            this.cooldowns.delete(scopedKey);
+            this.cooldowns.set(scopedKey, { until: Date.now() + cooldownMs, status });
             while (this.cooldowns.size > MAX_COOLDOWNS) {
               const oldest = this.cooldowns.keys().next().value;
               if (!oldest) break;
