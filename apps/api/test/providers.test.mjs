@@ -6,7 +6,7 @@ import { stremioContentId } from '../dist/providers/stremio-addons/stremio-addon
 import { AddonRegistryService, collectManifestUrls, isSafeAddonUrl, normalizeBaseUrl } from '../dist/providers/stremio-addons/addon-registry.service.js';
 import { PlaybackSourceResolverService } from '../dist/providers/playback-source-resolver.service.js';
 import { SourceDiscoveryService } from '../dist/providers/source-discovery.service.js';
-import { parseByteRange } from '../dist/providers/torrent-playback.service.js';
+import { parseByteRange } from '../dist/providers/byte-range.js';
 
 const passthroughAvailability = { validate: async (sources) => sources };
 
