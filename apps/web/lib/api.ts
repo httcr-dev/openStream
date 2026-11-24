@@ -12,10 +12,14 @@ export interface CatalogItem {
   overview: string;
   posterUrl?: string;
   backdropUrl?: string;
+  genres?: string[];
+  originalLanguage?: string;
 }
 
 export interface CatalogDetail extends CatalogItem {
   imdbId?: string;
+  externalIds?: { imdbId?: string; tvdbId?: string; tvmazeId?: string };
+  runtimeMinutes?: number;
   seasons?: { seasonNumber: number; name: string; episodeCount: number }[];
 }
 
@@ -24,6 +28,8 @@ export interface Episode {
   name: string;
   overview: string;
   stillUrl?: string;
+  airDate?: string;
+  runtimeMinutes?: number;
 }
 
 export type PlaybackTarget =
