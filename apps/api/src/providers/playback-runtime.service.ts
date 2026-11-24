@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PlaybackSourceResolverService } from './playback-source-resolver.service.js';
+import { isPlaybackCandidate } from './stremio-addons/addon-policy.js';
 
 export interface PlaybackFailoverInput {
   id: string;
@@ -53,7 +54,7 @@ export class PlaybackRuntimeService {
       input.provider,
     );
     const sources = result.sources.filter((source) =>
-      !failedIds.includes(source.id) && source.availability?.status !== 'unavailable',
+      !failedIds.includes(source.id) && isPlaybackCandidate(source),
     );
     const nextSource = sources[0] ?? null;
 
