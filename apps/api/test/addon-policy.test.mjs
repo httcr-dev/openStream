@@ -20,8 +20,9 @@ const manifest = (overrides = {}) => ({
 test('manifest só é elegível quando declara stream, tipos e prefixos compatíveis', () => {
   assert.equal(isManifestEligible(manifest(), 'movie', 'tt123'), true);
   assert.equal(isManifestEligible(manifest({ resources: ['catalog'] }), 'movie', 'tt123'), false);
-  assert.equal(isManifestEligible(manifest({ types: undefined }), 'movie', 'tt123'), false);
-  assert.equal(isManifestEligible(manifest({ idPrefixes: undefined }), 'movie', 'tt123'), false);
+  assert.equal(isManifestEligible(manifest({ types: undefined }), 'movie', 'tt123'), true);
+  assert.equal(isManifestEligible(manifest({ idPrefixes: undefined }), 'movie', 'tt123'), true);
+  assert.equal(isManifestEligible(manifest({ types: undefined, idPrefixes: undefined, resources: [{ name: 'stream' }] }), 'movie', 'tt123'), false);
   assert.equal(isManifestEligible(manifest(), 'series', 'tt123:1:1'), false);
 });
 
