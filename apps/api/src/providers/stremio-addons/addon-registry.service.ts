@@ -279,6 +279,25 @@ export class AddonRegistryService implements OnModuleInit {
       !addon.manifest.behaviorHints?.configurationRequired);
   }
 
+  getStats() {
+    const addons = this.list();
+    const ready = addons.filter((addon) => addon.status === 'ready');
+    const enabled = this.enabled();
+    const health = [...this.health.values()];
+    const requests = health.reduce((sum, item) => sum + item.successes + item.failures, 0);
+    const successes = health.reduce((sum, item) => sum + item.successes, 0);
+    return {
+      discoveryEnabled: this.discoveryEnabled(),
+      discovered: addons.filter((addon) => addon.source === 'directory').length,
+      manuallyConfigured: addons.filter((addon) => addon.source === 'manual').length,
+      ready: ready.length,
+      enabled: enabled.length,
+      rejected: addons.filter((addon) => addon.status === 'error').length,
+      requests,
+      successRate: requests ? successes / requests : null,
+    };
+  }
+
   recordRequest(addonId: string, success: boolean, latencyMs: number): void {
     const current = this.health.get(addonId) ?? { successes: 0, failures: 0, totalLatencyMs: 0 };
     if (success) current.successes += 1;
