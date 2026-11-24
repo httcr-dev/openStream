@@ -115,7 +115,7 @@ function Watch() {
   };
 
   async function handlePlaybackError(reason: string) {
-    if (!active || failoverLock.current || failedSourceIds.includes(active.id)) return;
+    if (!id || !active || failoverLock.current || failedSourceIds.includes(active.id)) return;
     failoverLock.current = true;
     const attempted = [...failedSourceIds, active.id];
     setFailedSourceIds(attempted);
