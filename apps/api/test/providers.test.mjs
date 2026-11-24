@@ -158,7 +158,7 @@ test('StremioAddonProvider consulta exatamente o episódio solicitado', async ()
 test('StremioAddonProvider preserva trackers junto do candidato torrent', async () => {
   const addon = {
     manifestUrl: 'https://addon.example/manifest.json', baseUrl: 'https://addon.example',
-    manifest: { id: 'addon.example', version: '1.0.0', name: 'Example Addon', resources: ['stream'], types: ['movie'] }, status: 'ready',
+    manifest: { id: 'addon.example', version: '1.0.0', name: 'Example Addon', resources: ['stream'], types: ['movie'], idPrefixes: ['tt'] }, status: 'ready',
   };
   const registry = { waitUntilReady: async () => {}, enabled: () => [addon], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
@@ -181,11 +181,11 @@ test('StremioAddonProvider preserva trackers junto do candidato torrent', async 
 test('StremioAddonProvider mantém resultados válidos quando outro addon falha com 403', async () => {
   const good = {
     manifestUrl: 'https://good.example/manifest.json', baseUrl: 'https://good.example',
-    manifest: { id: 'good', version: '1.0.0', name: 'Good', resources: ['stream'] }, status: 'ready',
+    manifest: { id: 'good', version: '1.0.0', name: 'Good', resources: ['stream'], types: ['movie'], idPrefixes: ['tt'] }, status: 'ready',
   };
   const bad = {
     manifestUrl: 'https://bad.example/manifest.json', baseUrl: 'https://bad.example',
-    manifest: { id: 'bad', version: '1.0.0', name: 'Bad', resources: ['stream'] }, status: 'ready',
+    manifest: { id: 'bad', version: '1.0.0', name: 'Bad', resources: ['stream'], types: ['movie'], idPrefixes: ['tt'] }, status: 'ready',
   };
   const registry = { waitUntilReady: async () => {}, enabled: () => [good, bad], recordRequest() {}, getHealth: () => ({ score: 0 }) };
   const provider = new (await import('../dist/providers/stremio-addons/stremio-addon.provider.js')).StremioAddonProvider(registry);
@@ -298,7 +298,8 @@ test('AddonRegistryService mantém configuração manual quando descoberta está
   const config = {
     get: (key) => ({
       STREMIO_ADDON_DISCOVERY_ENABLED: 'false',
-      STREMIO_ADDON_URLS: 'http://127.0.0.1:9999/manifest.json',
+      STREMIO_ADDON_URLS: 'https://example.com/manifest.json',
+      STREMIO_ADDON_ALLOWED_IDS: 'manual.addon',
     })[key],
   };
   const registry = new AddonRegistryService(config);
