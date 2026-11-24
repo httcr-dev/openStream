@@ -166,6 +166,7 @@ export class StremioAddonProvider implements PlaybackProvider {
               const trackers = extractTrackers(stream.sources);
               return [{
                 id, provider: addon.manifest.name, providerId: addon.manifest.id, label,
+                ...(hasRelease ? { release, quality: release.quality } : {}),
                 target: {
                   kind: 'torrent' as const,
                   infoHash: stream.infoHash.toLowerCase(),
