@@ -274,7 +274,7 @@ export class AddonRegistryService implements OnModuleInit {
   }
 
   enabled(): RegisteredAddon[] {
-    return this.list().filter((addon) => addon.status === 'ready' && addon.source === 'manual' &&
+    return this.list().filter((addon) => addon.status === 'ready' &&
       supportsStream(addon.manifest) && this.allowedAddonIds().includes(addon.manifest.id) &&
       !addon.manifest.behaviorHints?.configurationRequired);
   }
