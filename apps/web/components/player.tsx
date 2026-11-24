@@ -69,14 +69,50 @@ function NativePlayer({
     setError(null);
     reportedRef.current = false;
 
+    let stallTimer: ReturnType<typeof setTimeout> | undefined;
+    const clearStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = undefined;
+    };
+    const onWaiting = () => {
+      clearStallTimer();
+      if (!video.paused) {
+        stallTimer = setTimeout(() => {
+          if (!video.paused && video.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) {
+            reportError('A reprodução ficou sem receber dados por tempo excessivo.');
+          }
+        }, 20_000);
+      }
+    };
+    const onProgress = () => clearStallTimer();
+    const onEnded = () => {
+      if (Number.isFinite(video.duration) && video.duration > 0 && video.currentTime + 2 < video.duration) {
+        reportError('O stream terminou antes do fim esperado.');
+      }
+    };
+    video.addEventListener('waiting', onWaiting);
+    video.addEventListener('playing', onProgress);
+    video.addEventListener('timeupdate', onProgress);
+    video.addEventListener('ended', onEnded);
+
+    const cleanupVideo = () => {
+      clearStallTimer();
+      video.removeEventListener('waiting', onWaiting);
+      video.removeEventListener('playing', onProgress);
+      video.removeEventListener('timeupdate', onProgress);
+      video.removeEventListener('ended', onEnded);
+      video.removeAttribute('src');
+      video.load();
+    };
+
     if (transport === 'http') {
       video.src = url;
-      return () => { video.removeAttribute('src'); video.load(); };
+      return cleanupVideo;
     }
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = url;
-      return () => { video.removeAttribute('src'); video.load(); };
+      return cleanupVideo;
     }
 
     let hls: import('hls.js').default | undefined;
@@ -98,8 +134,7 @@ function NativePlayer({
     return () => {
       cancelled = true;
       hls?.destroy();
-      video.removeAttribute('src');
-      video.load();
+      cleanupVideo();
     };
   }, [transport, url]);
 
