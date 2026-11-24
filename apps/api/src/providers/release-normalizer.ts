@@ -68,8 +68,8 @@ export function normalizeReleaseMetadata(input: ReleaseInput): ReleaseMetadata {
             : /\bEAC3\b|\bDDP\b/i.test(text) ? 'E-AC-3'
               : /\bAAC\b/i.test(text) ? 'AAC' : undefined);
 
-  const hasBrazilianPortuguese = /\\bPT[ ._-]?BR\\b/i.test(text);
-  const hasEuropeanPortuguese = /\\bPT[ ._-]?PT\\b/i.test(text);
+  const hasBrazilianPortuguese = /\bPT[ ._-]?BR\\b/i.test(text);
+  const hasEuropeanPortuguese = /\bPT[ ._-]?PT\\b/i.test(text);
   const subtitles = LANGUAGES.filter((language) => {
     if (language === 'PT' && (hasBrazilianPortuguese || hasEuropeanPortuguese)) return false;
     const pattern = language === 'PT-BR' ? /\bPT[ ._-]?BR\b/i
