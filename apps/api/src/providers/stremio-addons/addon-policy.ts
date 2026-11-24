@@ -14,15 +14,15 @@ export function isManifestEligible(
   contentId: string,
 ): boolean {
   if (!manifest || !Array.isArray(manifest.resources) || !hasResource(manifest, 'stream')) return false;
-  if (!manifest.types?.includes(type)) return false;
-  if (!manifest.idPrefixes?.length || !manifest.idPrefixes.some((prefix) => contentId.startsWith(prefix))) return false;
   const resource = manifest.resources.find((item) =>
     typeof item === 'string' ? item === 'stream' : item.name === 'stream',
   );
-  if (resource && typeof resource !== 'string') {
-    if (!resource.types?.includes(type)) return false;
-    if (!resource.idPrefixes?.length || !resource.idPrefixes.some((prefix) => contentId.startsWith(prefix))) return false;
-  }
+  const resourceTypes = resource && typeof resource !== 'string' ? resource.types : undefined;
+  const resourcePrefixes = resource && typeof resource !== 'string' ? resource.idPrefixes : undefined;
+  const supportedTypes = resourceTypes ?? manifest.types;
+  const supportedPrefixes = resourcePrefixes ?? manifest.idPrefixes;
+  if (!supportedTypes?.includes(type)) return false;
+  if (!supportedPrefixes?.length || !supportedPrefixes.some((prefix) => contentId.startsWith(prefix))) return false;
   return true;
 }
 
