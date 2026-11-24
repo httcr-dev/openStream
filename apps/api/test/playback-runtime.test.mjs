@@ -2,10 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { PlaybackRuntimeService } from '../dist/providers/playback-runtime.service.js';
 
-const source = (id) => ({
+const source = (id, status = 'available') => ({
   id, provider: 'test-provider', label: id,
   target: { kind: 'native', transport: 'http', url: `https://media.example/${id}.mp4` },
-  availability: { status: 'available', checkedAt: new Date().toISOString() },
+  availability: { status, checkedAt: new Date().toISOString() },
 });
 
 test('failover registra a falha e retorna a próxima fonte não tentada', async () => {
@@ -14,10 +14,7 @@ test('failover registra a falha e retorna a próxima fonte não tentada', async 
   };
   const runtime = new PlaybackRuntimeService(resolver);
   const result = await runtime.failover({
-    id: 'tmdb:movie:1',
-    failedSourceId: 'source-a',
-    failedSourceIds: ['source-a'],
-    reason: 'HTTP playback error',
+    id: 'tmdb:movie:1', failedSourceId: 'source-a', failedSourceIds: ['source-a'], reason: 'HTTP playback error',
   });
 
   assert.equal(result.nextSource.id, 'source-b');
@@ -33,10 +30,7 @@ test('failover não repete fontes tentadas e registra quando esgota alternativas
   };
   const runtime = new PlaybackRuntimeService(resolver);
   const result = await runtime.failover({
-    id: 'tmdb:movie:1',
-    failedSourceId: 'source-b',
-    failedSourceIds: ['source-a', 'source-b'],
-    reason: 'network timeout',
+    id: 'tmdb:movie:1', failedSourceId: 'source-b', failedSourceIds: ['source-a', 'source-b'], reason: 'network timeout',
   });
 
   assert.equal(result.nextSource, null);
@@ -44,22 +38,16 @@ test('failover não repete fontes tentadas e registra quando esgota alternativas
   assert.equal(runtime.getStats().exhaustedFailovers, 1);
 });
 
-test('failover descarta fontes marcadas indisponíveis e valida payloads', async () => {
+test('failover descarta fontes indisponíveis e valida payloads', async () => {
   const resolver = {
     resolve: async () => ({
       media: { id: 'tmdb:movie:1', title: 'Example' },
-      sources: [
-        source('unavailable').availability = { status: 'unavailable', checkedAt: new Date().toISOString() },
-        source('available'),
-      ],
+      sources: [source('unavailable', 'unavailable'), source('available')],
     }),
   };
   const runtime = new PlaybackRuntimeService(resolver);
   const result = await runtime.failover({
-    id: 'tmdb:movie:1',
-    failedSourceId: 'failed',
-    failedSourceIds: [],
-    reason: 'decode error',
+    id: 'tmdb:movie:1', failedSourceId: 'failed', failedSourceIds: [], reason: 'decode error',
   });
   assert.equal(result.nextSource.id, 'available');
   await assert.rejects(
