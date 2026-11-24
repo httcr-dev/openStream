@@ -1,12 +1,16 @@
-import { Controller, Get, ParseIntPipe, Query } from '@nestjs/common';
+import { Body, Controller, Get, Logger, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { PlaybackSourceResolverService } from './playback-source-resolver.service.js';
+import { PlaybackRuntimeService, type PlaybackFailoverInput } from './playback-runtime.service.js';
 import { ProviderRegistry } from './provider.registry.js';
 import { AddonRegistryService } from './stremio-addons/addon-registry.service.js';
 
 @Controller()
 export class ProvidersController {
+  private readonly logger = new Logger(ProvidersController.name);
+
   constructor(
     private readonly resolver: PlaybackSourceResolverService,
+    private readonly runtime: PlaybackRuntimeService,
     private readonly registry: ProviderRegistry,
     private readonly addons: AddonRegistryService,
   ) {}
@@ -40,5 +44,16 @@ export class ProvidersController {
     @Query('provider') provider?: string,
   ) {
     return this.resolver.resolve(id, season, episode, provider);
+  }
+
+  /** Reporta falha da fonte atual e devolve a próxima alternativa ainda não tentada. */
+  @Post('playback/failover')
+  failover(@Body() input: PlaybackFailoverInput) {
+    return this.runtime.failover(input);
+  }
+
+  @Get('playback/runtime/stats')
+  runtimeStats() {
+    return this.runtime.getStats();
   }
 }
