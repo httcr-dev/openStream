@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Logger, ParseIntPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { PlaybackSourceResolverService } from './playback-source-resolver.service.js';
 import { PlaybackRuntimeService, type PlaybackFailoverInput } from './playback-runtime.service.js';
 import { ProviderRegistry } from './provider.registry.js';
@@ -6,8 +6,6 @@ import { AddonRegistryService } from './stremio-addons/addon-registry.service.js
 
 @Controller()
 export class ProvidersController {
-  private readonly logger = new Logger(ProvidersController.name);
-
   constructor(
     private readonly resolver: PlaybackSourceResolverService,
     private readonly runtime: PlaybackRuntimeService,
