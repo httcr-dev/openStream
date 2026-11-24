@@ -105,9 +105,9 @@ export class CatalogService {
           episodeCount: s.episode_count,
         }));
       const externalIds = {
-        imdbId: r.external_ids?.imdb_id || undefined,
-        tvdbId: r.external_ids?.tvdb_id ? String(r.external_ids.tvdb_id) : undefined,
-        tvmazeId: r.external_ids?.tvmaze_id ? String(r.external_ids.tvmaze_id) : undefined,
+        ...(r.external_ids?.imdb_id ? { imdbId: r.external_ids.imdb_id } : {}),
+        ...(r.external_ids?.tvdb_id ? { tvdbId: String(r.external_ids.tvdb_id) } : {}),
+        ...(r.external_ids?.tvmaze_id ? { tvmazeId: String(r.external_ids.tvmaze_id) } : {}),
       };
       return {
         ...this.mapItem(r, 'series'),
