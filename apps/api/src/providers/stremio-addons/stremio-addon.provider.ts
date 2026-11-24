@@ -9,24 +9,6 @@ import { cooldownForStatus, isManifestEligible } from './addon-policy.js';
 
 const MAX_COOLDOWNS = 500;
 
-function supportsType(addon: RegisteredAddon, type: 'movie' | 'series'): boolean {
-  const declaredTypes = addon.manifest.types;
-  if (declaredTypes?.length && !declaredTypes.includes(type)) return false;
-  const streamResource = addon.manifest.resources.find((resource) =>
-    typeof resource === 'string' ? resource === 'stream' : resource.name === 'stream',
-  );
-  if (streamResource && typeof streamResource !== 'string' && streamResource.types?.length) {
-    return streamResource.types.includes(type);
-  }
-  return true;
-}
-
-function supportsId(addon: RegisteredAddon, id: string): boolean {
-  const prefixes = addon.manifest.idPrefixes;
-  if (!prefixes?.length) return true;
-  return prefixes.some((prefix) => id.startsWith(prefix));
-}
-
 function isValidInfoHash(value: string): boolean {
   return /^(?:[a-f\d]{40}|[a-z2-7]{32})$/i.test(value);
 }
@@ -63,7 +45,7 @@ export class StremioAddonProvider implements PlaybackProvider {
   readonly id = 'stremio-addons';
   readonly name = 'Stremio Addons';
   readonly playerKind = 'native' as const;
-  readonly note = 'Addons compatíveis com o protocolo Stremio, consultados automaticamente.';
+  readonly note = 'Addons explicitamente allowlisted e com autorização declarada.';
   private readonly logger = new Logger(StremioAddonProvider.name);
   private readonly cooldowns = new Map<string, { until: number; status: number }>();
 
