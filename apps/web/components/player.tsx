@@ -10,11 +10,17 @@ import { torrentStreamUrl, type PlaybackSource } from '@/lib/api';
  * - embed:       iframe com o player oficial do provedor
  * - torrent:     WebTorrent no backend, exposto como HTTP com suporte a Range
  */
-export function Player({ source }: { source: PlaybackSource }) {
+export function Player({
+  source,
+  onPlaybackError,
+}: {
+  source: PlaybackSource;
+  onPlaybackError?: (reason: string) => void;
+}) {
   const { target } = source;
 
   if (target.kind === 'torrent') {
-    return <NativePlayer key={source.id} transport="http" url={torrentStreamUrl(target)} />;
+    return <NativePlayer key={source.id} transport="http" url={torrentStreamUrl(target)} onPlaybackError={onPlaybackError} />;
   }
 
   if (target.kind === 'embed') {
@@ -32,26 +38,45 @@ export function Player({ source }: { source: PlaybackSource }) {
       </div>
     );
   }
-  return <NativePlayer key={source.id} transport={target.transport} url={target.url} />;
+  return <NativePlayer key={source.id} transport={target.transport} url={target.url} onPlaybackError={onPlaybackError} />;
 }
 
-function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: string }) {
+function NativePlayer({
+  transport,
+  url,
+  onPlaybackError,
+}: {
+  transport: 'http' | 'hls';
+  url: string;
+  onPlaybackError?: (reason: string) => void;
+}) {
   const ref = useRef<HTMLVideoElement>(null);
+  const callbackRef = useRef(onPlaybackError);
+  const reportedRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
+  callbackRef.current = onPlaybackError;
+
+  const reportError = (message: string) => {
+    setError(message);
+    if (reportedRef.current) return;
+    reportedRef.current = true;
+    callbackRef.current?.(message);
+  };
 
   useEffect(() => {
     const video = ref.current;
     if (!video) return;
     setError(null);
+    reportedRef.current = false;
 
     if (transport === 'http') {
       video.src = url;
-      return;
+      return () => { video.removeAttribute('src'); video.load(); };
     }
 
     if (video.canPlayType('application/vnd.apple.mpegurl')) {
       video.src = url;
-      return;
+      return () => { video.removeAttribute('src'); video.load(); };
     }
 
     let hls: import('hls.js').default | undefined;
@@ -59,12 +84,12 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
     void import('hls.js').then(({ default: Hls }) => {
       if (cancelled) return;
       if (!Hls.isSupported()) {
-        setError('Este navegador não suporta HLS.');
+        reportError('Este navegador não suporta HLS.');
         return;
       }
       hls = new Hls();
       hls.on(Hls.Events.ERROR, (_e, data) => {
-        if (data.fatal) setError(`Erro de reprodução HLS (${data.type}).`);
+        if (data.fatal) reportError(`Erro de reprodução HLS (${data.type}).`);
       });
       hls.loadSource(url);
       hls.attachMedia(video);
@@ -73,6 +98,8 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
     return () => {
       cancelled = true;
       hls?.destroy();
+      video.removeAttribute('src');
+      video.load();
     };
   }, [transport, url]);
 
@@ -84,10 +111,10 @@ function NativePlayer({ transport, url }: { transport: 'http' | 'hls'; url: stri
           controls
           playsInline
           preload="metadata"
-          onError={() => setError(
+          onError={() => reportError(
             transport === 'http'
-              ? 'Não foi possível reproduzir este arquivo. Verifique se há peers disponíveis e se o navegador suporta o codec.'
-              : 'Não foi possível reproduzir este arquivo (formato não suportado pelo navegador?). Tente outra fonte.',
+              ? 'Não foi possível reproduzir este arquivo. Verifique a origem e a compatibilidade do codec.'
+              : 'Não foi possível reproduzir este arquivo (formato não suportado pelo navegador?).',
           )}
         />
       </div>
