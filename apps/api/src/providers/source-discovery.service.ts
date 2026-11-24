@@ -3,6 +3,7 @@ import { ProviderRegistry } from './provider.registry.js';
 import { ProviderSearchError } from './provider.types.js';
 import { rankPlaybackSources } from './source-ranking.js';
 import { SourceAvailabilityValidatorService } from './source-availability-validator.service.js';
+import { isPlaybackCandidate } from './stremio-addons/addon-policy.js';
 import type { MediaRef, PlaybackSource, ProviderSearchFailure } from './provider.types.js';
 
 export interface SourceDiscoveryResult {
@@ -70,7 +71,15 @@ export class SourceDiscoveryService {
 
     const deduplicated = this.deduplicate(validSources);
     const available = await this.availability.validate(deduplicated);
-    return { sources: rankPlaybackSources(available, preferredProviderId), errors };
+    const admitted = available.filter((source) => {
+      if (isPlaybackCandidate(source)) return true;
+      errors.push({
+        provider: source.providerId ?? source.provider,
+        message: `Fonte ocultada: exige autorização declarada e disponibilidade nativa confirmada (${source.availability?.status ?? 'unknown'}).`,
+      });
+      return false;
+    });
+    return { sources: rankPlaybackSources(admitted, preferredProviderId), errors };
   }
 
   private isValidSource(source: PlaybackSource): boolean {
