@@ -31,12 +31,34 @@ export type PlaybackTarget =
   | { kind: 'embed'; provider: string; embedUrl: string }
   | { kind: 'torrent'; infoHash: string; fileIdx?: number; trackers?: string[]; externalUrl?: string };
 
+export interface ReleaseMetadata {
+  title: string;
+  year?: number;
+  season?: number;
+  episode?: number;
+  quality?: string;
+  releaseType?: string;
+  codec?: string;
+  audio?: string;
+  subtitles: string[];
+  sizeBytes?: number;
+  seeders?: number;
+}
+
 export interface PlaybackSource {
   id: string;
   provider: string;
   providerId?: string;
   label: string;
   quality?: string;
+  release?: ReleaseMetadata;
+  availability?: {
+    status: 'available' | 'unavailable' | 'unknown';
+    checkedAt: string;
+    latencyMs?: number;
+    contentType?: string;
+    reason?: string;
+  };
   target: PlaybackTarget;
 }
 
