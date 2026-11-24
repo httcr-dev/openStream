@@ -26,6 +26,8 @@ function sourceSummary(source: PlaybackSource): string {
     : source.availability?.status === 'unavailable' ? 'indisponível' : 'não verificada';
   return [
     release?.quality ?? source.quality,
+    release?.year ? String(release.year) : undefined,
+    release?.season !== undefined && release.episode !== undefined ? `T${release.season}E${release.episode}` : undefined,
     release?.releaseType,
     release?.codec,
     release?.audio,
