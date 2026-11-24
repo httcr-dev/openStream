@@ -6,7 +6,7 @@ test('StremioAddonProvider anexa metadados normalizados ao stream e ao torrent',
   const addon = {
     manifestUrl: 'https://addon.example/manifest.json',
     baseUrl: 'https://addon.example',
-    manifest: { id: 'addon.example', version: '1.0.0', name: 'Example', resources: ['stream'], types: ['movie'] },
+    manifest: { id: 'addon.example', version: '1.0.0', name: 'Example', resources: ['stream'], types: ['movie'], idPrefixes: ['tt'] },
     status: 'ready',
   };
   const registry = {
