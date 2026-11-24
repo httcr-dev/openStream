@@ -43,7 +43,7 @@ export class CatalogService {
   }
 
   static parseId(id: string): { kind: MediaKind; tmdbId: number } {
-    const m = /^tmdb:(movie|series):(\\d+)$/.exec(id);
+    const m = /^tmdb:(movie|series):(\d+)$/.exec(id);
     if (!m) throw new BadRequestException(`ID inválido: ${id}`);
     return { kind: m[1] as MediaKind, tmdbId: Number(m[2]) };
   }
@@ -54,7 +54,7 @@ export class CatalogService {
 
   private yearOf(date?: string) {
     const y = date?.slice(0, 4);
-    return y && /^\\d{4}$/.test(y) ? Number(y) : undefined;
+    return y && /^\d{4}$/.test(y) ? Number(y) : undefined;
   }
 
   private mapItem(r: any, kind: MediaKind): CatalogItem {
